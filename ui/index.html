@@ -1,0 +1,4447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vision Systems Assistant</title>
+  <style>
+    :root {
+      --bg: #0f0f10;
+      --sidebar: #161618;
+      --surface: #1c1c1f;
+      --surface-2: #26262b;
+      --border: #2e2e35;
+      --text: #ececf1;
+      --text-muted: #9b9ba7;
+      --user: #7c3aed;
+      --user-hover: #6d28d9;
+      --assistant: #2a2a30;
+      --error: #f87171;
+      --accent: #a78bfa;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .sidebar-header {
+      padding: 24px 20px 16px;
+      flex-shrink: 0;
+    }
+
+    .brand h1 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+
+    .kb-label {
+      font-size: 0.8125rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .sidebar-actions {
+      padding: 0 16px 12px;
+      flex-shrink: 0;
+    }
+
+    .new-chat-btn {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .new-chat-btn:hover {
+      background: var(--surface-2);
+      border-color: #3d3d47;
+    }
+
+    .new-chat-btn svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .search-wrap {
+      padding: 0 16px 12px;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 28px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 9px 12px 9px 36px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.8125rem;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .search-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .search-input:focus {
+      border-color: #4c3b8f;
+    }
+
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 8px 8px;
+      min-height: 0;
+    }
+
+    .documents-panel {
+      flex-shrink: 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .documents-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 12px 16px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font: inherit;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: color 0.15s ease, background 0.15s ease;
+    }
+
+    .documents-toggle:hover {
+      color: var(--text);
+      background: var(--surface);
+    }
+
+    .documents-chevron {
+      font-size: 0.625rem;
+      transition: transform 0.15s ease;
+    }
+
+    .documents-panel.open .documents-chevron {
+      transform: rotate(180deg);
+    }
+
+    .documents-body {
+      padding: 0 12px 12px;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    .ingest-progress-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .ingest-progress-card {
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    .ingest-progress-card.ingesting {
+      animation: ingest-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes ingest-pulse {
+      0%, 100% { border-color: var(--border); }
+      50% { border-color: #3b4f6b; }
+    }
+
+    .ingest-progress-card.done {
+      border-color: #1f4d32;
+      background: #0f1f17;
+    }
+
+    .ingest-progress-card.error {
+      border-color: #5c2b2b;
+      background: #1a1010;
+    }
+
+    .ingest-progress-filename {
+      font-size: 0.75rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .ingest-progress-stage {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .ingest-progress-bar-wrap {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--surface-2);
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+
+    .ingest-progress-bar {
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #3b82f6, #60a5fa);
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .ingest-progress-card.done .ingest-progress-bar {
+      background: linear-gradient(90deg, #22c55e, #4ade80);
+    }
+
+    .ingest-progress-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.625rem;
+      color: var(--text-muted);
+    }
+
+    .ingest-progress-count {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ingest-progress-error {
+      font-size: 0.6875rem;
+      color: var(--error);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+
+    .ingest-progress-success {
+      font-size: 0.6875rem;
+      color: #86efac;
+      margin-top: 4px;
+    }
+
+    .documents-body[hidden] {
+      display: none;
+    }
+
+    .documents-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .documents-add-btn,
+    .documents-refresh-btn {
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text-muted);
+      font: inherit;
+      font-size: 0.6875rem;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .documents-add-btn:hover:not(:disabled),
+    .documents-refresh-btn:hover:not(:disabled) {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .documents-add-btn {
+      color: #93c5fd;
+      border-color: #1e3a5f;
+      background: #0f1a2e;
+    }
+
+    .documents-add-btn:hover:not(:disabled) {
+      background: #152238;
+      color: #bfdbfe;
+    }
+
+    .documents-add-btn:disabled,
+    .documents-refresh-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .documents-dropzone {
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      text-align: center;
+      font-size: 0.6875rem;
+      line-height: 1.4;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+    }
+
+    .documents-dropzone:hover,
+    .documents-dropzone.dragover {
+      border-color: #3b82f6;
+      background: rgba(59, 130, 246, 0.06);
+      color: var(--text);
+    }
+
+    .documents-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .document-vendor-header {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      padding: 0.5rem 0.25rem 0.2rem;
+      margin-top: 0.35rem;
+    }
+
+    .document-vendor-header:first-child {
+      margin-top: 0;
+    }
+
+    .document-meta-line {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    .documents-empty {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      padding: 8px 4px;
+    }
+
+    .document-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    .document-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .document-name {
+      font-size: 0.75rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .document-chunks {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .document-delete-btn {
+      flex-shrink: 0;
+      padding: 4px 8px;
+      border: 1px solid #5c2b2b;
+      border-radius: 6px;
+      background: #2a1818;
+      color: #f87171;
+      font: inherit;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .document-delete-btn:hover:not(:disabled) {
+      background: #3a2020;
+    }
+
+    .document-delete-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .documents-status {
+      margin-top: 8px;
+      font-size: 0.6875rem;
+      line-height: 1.4;
+      color: var(--text-muted);
+      min-height: 1rem;
+    }
+
+    .documents-status.success {
+      color: #86efac;
+    }
+
+    .documents-status.error {
+      color: var(--error);
+    }
+
+    .history-row {
+      display: flex;
+      align-items: stretch;
+      margin-bottom: 2px;
+      border-radius: 8px;
+      border-left: 3px solid transparent;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .history-row:hover {
+      background: var(--surface);
+    }
+
+    .history-row:hover .delete-chat-btn {
+      opacity: 1;
+    }
+
+    .history-row.active {
+      background: var(--surface);
+      border-left-color: var(--user);
+    }
+
+    .history-item {
+      flex: 1;
+      min-width: 0;
+      text-align: left;
+      padding: 12px 4px 12px 11px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .delete-chat-btn {
+      flex-shrink: 0;
+      width: 32px;
+      align-self: center;
+      margin-right: 4px;
+      padding: 6px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+    }
+
+    .delete-chat-btn:hover {
+      color: var(--error);
+      background: rgba(248, 113, 113, 0.12);
+    }
+
+    .history-row.active .delete-chat-btn {
+      opacity: 1;
+    }
+
+    .history-title {
+      font-size: 0.8125rem;
+      font-weight: 500;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-bottom: 4px;
+    }
+
+    .history-time {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+    }
+
+    .no-results {
+      padding: 24px 16px;
+      text-align: center;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--bg);
+      position: relative;
+    }
+
+    .settings-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 10;
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .settings-btn:hover {
+      background: var(--surface-2);
+      color: var(--text);
+      border-color: #3d3d47;
+    }
+
+    .settings-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .api-key-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.65);
+      padding: 24px;
+    }
+
+    .api-key-modal-overlay.is-open {
+      display: flex;
+    }
+
+    .api-key-modal {
+      width: 100%;
+      max-width: 400px;
+      padding: 24px;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    }
+
+    .api-key-modal h2 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .api-key-modal p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      line-height: 1.45;
+    }
+
+    .api-key-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.875rem;
+      outline: none;
+      margin-bottom: 16px;
+    }
+
+    .api-key-input:focus {
+      border-color: #4c3b8f;
+    }
+
+    .api-key-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .api-key-cancel,
+    .api-key-submit {
+      flex: 1;
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      font: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .api-key-cancel {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .api-key-cancel:hover {
+      background: var(--border);
+    }
+
+    .api-key-submit {
+      background: var(--user);
+      color: #fff;
+    }
+
+    .api-key-submit:hover {
+      background: var(--user-hover);
+    }
+
+    .upload-modal-filename {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      word-break: break-all;
+    }
+
+    .upload-form-field {
+      margin-bottom: 12px;
+    }
+
+    .upload-form-field label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .upload-form-field .api-key-input {
+      margin-bottom: 0;
+    }
+
+    .chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px 24px 24px;
+      scroll-behavior: smooth;
+    }
+
+    .chat-inner {
+      max-width: 780px;
+      width: 100%;
+      min-width: 0;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .welcome {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--text-muted);
+    }
+
+    .welcome h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .welcome p {
+      font-size: 0.9375rem;
+      max-width: 420px;
+      margin: 0 auto;
+    }
+
+    .message {
+      display: flex;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .message.user {
+      justify-content: flex-end;
+    }
+
+    .message.assistant {
+      justify-content: flex-start;
+    }
+
+    .bubble {
+      display: block;
+      width: fit-content;
+      max-width: 100%;
+      min-width: 3rem;
+      padding: 14px 18px;
+      border-radius: 18px;
+      font-size: 0.9375rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: normal;
+      hyphens: none;
+    }
+
+    .message.user .bubble {
+      background: var(--user);
+      color: #fff;
+      border-bottom-right-radius: 6px;
+    }
+
+    .message.assistant .bubble {
+      background: var(--assistant);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 6px;
+    }
+
+    .message-content {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: min(85%, 42rem);
+      min-width: min(100%, 12rem);
+      flex: 0 1 auto;
+    }
+
+    .message.user .message-content {
+      align-items: flex-end;
+    }
+
+    .message.assistant .message-content {
+      align-items: flex-start;
+    }
+
+    .citations {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+      padding: 0 4px;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    .citation-thumbs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 4px;
+    }
+
+    .citation-thumb-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-width: 160px;
+    }
+
+    .citation-thumb {
+      width: 96px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: zoom-in;
+    }
+
+    .citation-thumb-label {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .citation-media-root {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 4px;
+    }
+
+    .citation-videos {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .citation-video-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: min(100%, 480px);
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .citation-video-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }
+
+    .citation-video {
+      width: 100%;
+      max-height: 270px;
+      border-radius: 6px;
+      background: #000;
+    }
+
+    .citation-video-transcript {
+      font-size: 0.8125rem;
+      color: var(--text);
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .citation-video-fallback {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .citation-youtube-link {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .citation-youtube-link:hover {
+      text-decoration: underline;
+    }
+
+    .citation-youtube-embed {
+      width: 100%;
+      max-width: min(100%, 560px);
+      min-height: 200px;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      border: 0;
+      border-radius: 8px;
+      background: #000;
+      margin-top: 8px;
+    }
+
+    .citation-players {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 10px;
+      width: 100%;
+      max-width: min(100%, 560px);
+    }
+
+    .citation-video-heading {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .citation-youtube-videos {
+      margin-top: 4px;
+      margin-bottom: 4px;
+    }
+
+    .image-lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, 0.82);
+      cursor: zoom-out;
+    }
+
+    .image-lightbox.open {
+      display: flex;
+    }
+
+    .image-lightbox img {
+      max-width: min(92vw, 960px);
+      max-height: 88vh;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+
+    .md-code {
+      margin: 8px 0;
+      padding: 10px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.25);
+      overflow-x: auto;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+    }
+
+    .query-meta {
+      font-size: 0.6875rem;
+      color: #6b7280;
+      line-height: 1.4;
+      padding: 0 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .feedback-row {
+      display: flex;
+      gap: 6px;
+      padding: 4px 4px 0;
+    }
+
+    .feedback-btn {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .feedback-btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .feedback-btn.selected {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .feedback-thanks {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      padding: 4px;
+    }
+
+    .settings-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 0.875rem;
+      color: var(--text);
+    }
+
+    .settings-toggle-row label {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .settings-toggle-row input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--user);
+      cursor: pointer;
+    }
+
+    .settings-section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    .bubble.streaming::after {
+      content: "";
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background: var(--text-muted);
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: cursor-blink 1s step-end infinite;
+    }
+
+    @keyframes cursor-blink {
+      50% { opacity: 0; }
+    }
+
+    .message.error .bubble {
+      background: rgba(248, 113, 113, 0.12);
+      color: var(--error);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      max-width: 100%;
+    }
+
+    .typing .bubble {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 44px;
+      padding: 14px 20px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: bounce 1.4s infinite ease-in-out both;
+    }
+
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
+    .dot:nth-child(3) { animation-delay: 0s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% {
+        transform: scale(0.65);
+        opacity: 0.5;
+      }
+      40% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .composer-wrap {
+      padding: 16px 24px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .chat-toolbar {
+      max-width: 780px;
+      margin: 0 auto 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .chat-toolbar.hidden {
+      display: none;
+    }
+
+    .filter-select-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .filter-select-wrap label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .filter-select {
+      flex: 1;
+      min-width: 0;
+      max-width: 200px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.8125rem;
+    }
+
+    .filter-select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .filter-active-pill {
+      max-width: 780px;
+      margin: 0 auto 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .filter-active-pill.hidden {
+      display: none;
+    }
+
+    .filter-active-pill span {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--accent);
+    }
+
+    .filter-clear-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    .filter-clear-btn:hover {
+      color: var(--text);
+      background: var(--surface-2);
+    }
+
+    .tts-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .tts-controls[hidden] {
+      display: none;
+    }
+
+    .tts-toggle-btn {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .tts-toggle-btn:hover {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .tts-toggle-btn.active {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: rgba(167, 139, 250, 0.1);
+    }
+
+    .tts-toggle-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .tts-rate-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .tts-rate-wrap input[type="range"] {
+      width: 72px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .composer {
+      max-width: 780px;
+      margin: 0 auto;
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 12px 12px 18px;
+      transition: border-color 0.15s ease;
+    }
+
+    .composer:focus-within {
+      border-color: #4c3b8f;
+    }
+
+    .composer textarea {
+      flex: 1;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+      max-height: 160px;
+      min-height: 24px;
+      padding: 4px 0;
+    }
+
+    .composer textarea::placeholder {
+      color: var(--text-muted);
+    }
+
+    .attach-btn {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+    }
+
+    .attach-btn:hover:not(:disabled) {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .attach-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .attach-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .mic-btn {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+      position: relative;
+    }
+
+    .mic-btn:hover:not(:disabled) {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .mic-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .mic-btn[hidden] {
+      display: none;
+    }
+
+    .mic-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .mic-btn.recording {
+      color: #fca5a5;
+      background: rgba(248, 113, 113, 0.12);
+    }
+
+    .mic-btn.recording::after {
+      content: "";
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: mic-pulse 1.2s ease-in-out infinite;
+    }
+
+    .mic-btn.transcribing svg {
+      opacity: 0.35;
+    }
+
+    .mic-btn.transcribing::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: mic-spin 0.8s linear infinite;
+    }
+
+    @keyframes mic-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.55; transform: scale(0.85); }
+    }
+
+    @keyframes mic-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .stt-status {
+      max-width: 780px;
+      margin: 0 auto 6px;
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      min-height: 0;
+    }
+
+    .stt-status:not(:empty) {
+      min-height: 1rem;
+    }
+
+    .message.status .bubble {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      border: 1px dashed var(--border);
+    }
+
+    .send-btn,
+    .stop-btn {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, opacity 0.15s ease;
+    }
+
+    .send-btn {
+      background: var(--user);
+      color: #fff;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      background: var(--user-hover);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .stop-btn {
+      background: #3f1d1d;
+      color: #fca5a5;
+      border: 1px solid #7f1d1d;
+    }
+
+    .stop-btn:hover {
+      background: #5c2626;
+      color: #fecaca;
+    }
+
+    .send-btn[hidden],
+    .stop-btn[hidden] {
+      display: none;
+    }
+
+    .send-btn svg,
+    .stop-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    @media (max-width: 720px) {
+      .sidebar {
+        width: 220px;
+      }
+
+      .sidebar-header {
+        padding: 20px 14px 12px;
+      }
+
+      .chat {
+        padding: 20px 14px 16px;
+      }
+
+      .composer-wrap {
+        padding: 12px 14px 16px;
+      }
+
+      .message-content {
+        max-width: 92%;
+        min-width: min(100%, 10rem);
+      }
+
+      .chat-inner {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="imageLightbox" class="image-lightbox" aria-hidden="true">
+    <img id="imageLightboxImg" alt="">
+  </div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <h1>Vision Systems Assistant</h1>
+          <div class="kb-label">Industrial Vision AI</div>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="new-chat-btn" id="newChatBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14"></path>
+            <path d="M5 12h14"></path>
+          </svg>
+          New Chat
+        </button>
+      </div>
+
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="M21 21l-4.35-4.35"></path>
+        </svg>
+        <input
+          class="search-input"
+          id="searchInput"
+          type="search"
+          placeholder="Search conversations..."
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="history-list" id="historyList"></div>
+
+      <div class="documents-panel" id="documentsPanel">
+        <button class="documents-toggle" id="documentsToggle" type="button">
+          <span>Documents</span>
+          <span class="documents-chevron">▼</span>
+        </button>
+        <div class="documents-body" id="documentsBody" hidden>
+          <input
+            type="file"
+            id="docFileInput"
+            accept=".pdf,.txt"
+            multiple
+            hidden
+          />
+          <div class="documents-toolbar">
+            <select id="documentsVendorFilter" class="api-key-input" style="flex:1;min-width:0;margin:0;">
+              <option value="">All vendors</option>
+            </select>
+            <button
+              class="documents-add-btn"
+              id="documentsAddBtn"
+              type="button"
+            >
+              Add document
+            </button>
+            <button
+              class="documents-refresh-btn"
+              id="documentsRefreshBtn"
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+          <div class="documents-dropzone" id="documentsDropzone">
+            Drop PDF or TXT here, or click to browse
+          </div>
+          <div class="ingest-progress-list" id="ingestProgressList"></div>
+          <div class="documents-list" id="documentsList"></div>
+          <div class="documents-status" id="documentsStatus"></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <button
+        class="settings-btn"
+        id="settingsBtn"
+        type="button"
+        aria-label="API key settings"
+        title="API key settings"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+        </svg>
+      </button>
+      <div class="chat" id="chat">
+        <div class="chat-inner" id="chatInner"></div>
+      </div>
+
+      <div class="composer-wrap">
+        <div class="chat-toolbar hidden" id="chatToolbar">
+          <div class="filter-select-wrap">
+            <label for="chatVendorSelect">Vendor</label>
+            <select id="chatVendorSelect" class="filter-select">
+              <option value="">All vendors</option>
+            </select>
+          </div>
+          <div class="filter-select-wrap">
+            <label for="chatProductSelect">Product</label>
+            <select id="chatProductSelect" class="filter-select" disabled>
+              <option value="">All products</option>
+            </select>
+          </div>
+        </div>
+        <div class="filter-active-pill hidden" id="filterActivePill">
+          <span id="filterActiveText"></span>
+          <button type="button" class="filter-clear-btn" id="filterClearBtn" title="Clear filters" aria-label="Clear filters">×</button>
+        </div>
+        <div class="chat-toolbar" id="ttsToolbar">
+          <div class="tts-controls" id="ttsControls" hidden>
+            <button
+              class="tts-toggle-btn"
+              id="ttsToggleBtn"
+              type="button"
+              aria-label="Read answers aloud"
+              aria-pressed="false"
+              title="Read answers aloud (off)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              </svg>
+            </button>
+            <label class="tts-rate-wrap" title="Speech rate">
+              <span>Rate</span>
+              <input type="range" id="ttsRateSlider" min="0.8" max="1.6" step="0.05" value="1.05" aria-label="Speech rate" />
+            </label>
+          </div>
+        </div>
+        <div class="stt-status" id="sttStatus" aria-live="polite"></div>
+        <form class="composer" id="composerForm">
+          <input
+            type="file"
+            id="fileInput"
+            accept=".pdf,.txt"
+            hidden
+          />
+          <button class="attach-btn" id="attachBtn" type="button" aria-label="Attach document">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+            </svg>
+          </button>
+          <button
+            class="mic-btn"
+            id="micBtn"
+            type="button"
+            hidden
+            aria-label="Hold to dictate query"
+            title="Hold to dictate (release to transcribe)"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+          <textarea
+            id="messageInput"
+            rows="1"
+            placeholder="Ask about Pekat, Mechmind, Zivid, LMI..."
+            autocomplete="off"
+          ></textarea>
+          <button class="send-btn" id="sendBtn" type="submit" aria-label="Send message">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19V5"></path>
+              <path d="M5 12l7-7 7 7"></path>
+            </svg>
+          </button>
+          <button class="stop-btn" id="stopBtn" type="button" aria-label="Stop generation" hidden>
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <rect x="6" y="6" width="12" height="12" rx="1"></rect>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <div class="api-key-modal-overlay" id="apiKeyModal">
+    <div class="api-key-modal" role="dialog" aria-labelledby="apiKeyModalTitle">
+      <h2 id="apiKeyModalTitle">Settings</h2>
+      <div class="settings-section-label">API Key</div>
+      <p>Enter the API key to connect to this server. Leave blank if authentication is disabled.</p>
+      <input
+        class="api-key-input"
+        id="apiKeyInput"
+        type="password"
+        placeholder="X-API-Key"
+        autocomplete="off"
+      />
+      <div class="settings-section-label" style="margin-top: 4px;">Developer</div>
+      <div class="settings-toggle-row">
+        <label for="devModeToggle">Show query analytics</label>
+        <input type="checkbox" id="devModeToggle" />
+      </div>
+      <div class="settings-toggle-row">
+        <label for="sttAutoSendToggle">Auto-send after voice dictation</label>
+        <input type="checkbox" id="sttAutoSendToggle" />
+      </div>
+      <div class="api-key-actions">
+        <button class="api-key-cancel" id="apiKeyCancel" type="button">Cancel</button>
+        <button class="api-key-submit" id="apiKeySubmit" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="api-key-modal-overlay" id="uploadModal" aria-hidden="true">
+    <div class="api-key-modal" role="dialog" aria-labelledby="uploadModalTitle">
+      <h2 id="uploadModalTitle">Upload document</h2>
+      <p class="upload-modal-filename" id="uploadModalFilename"></p>
+      <div class="upload-form-field">
+        <label for="uploadVendorSelect">Vendor</label>
+        <select id="uploadVendorSelect" class="api-key-input">
+          <option value="pekat">pekat</option>
+          <option value="mechmind">mechmind</option>
+          <option value="zivid">zivid</option>
+          <option value="lmi">lmi</option>
+          <option value="basler">basler</option>
+          <option value="photoneo">photoneo</option>
+          <option value="other">other</option>
+        </select>
+      </div>
+      <div class="upload-form-field">
+        <label for="uploadDocTypeSelect">Document type</label>
+        <select id="uploadDocTypeSelect" class="api-key-input">
+          <option value="user_manual">User manual</option>
+          <option value="quick_start">Quick start</option>
+          <option value="api_reference">API reference</option>
+          <option value="datasheet">Datasheet</option>
+          <option value="release_notes">Release notes</option>
+          <option value="integration_guide">Integration guide</option>
+          <option value="troubleshooting">Troubleshooting</option>
+          <option value="specification">Specification</option>
+        </select>
+      </div>
+      <div class="upload-form-field">
+        <label for="uploadProductLineInput">Product line <span style="font-weight:400;text-transform:none;">(optional)</span></label>
+        <input
+          class="api-key-input"
+          id="uploadProductLineInput"
+          type="text"
+          placeholder='e.g. In-Sight, Gocator, VISION'
+          autocomplete="off"
+        />
+      </div>
+      <div class="upload-form-field">
+        <label for="uploadSoftwareVersionInput">Software version <span style="font-weight:400;text-transform:none;">(optional)</span></label>
+        <input
+          class="api-key-input"
+          id="uploadSoftwareVersionInput"
+          type="text"
+          placeholder="e.g. 3.15.0"
+          autocomplete="off"
+        />
+      </div>
+      <div class="api-key-actions">
+        <button class="api-key-cancel" id="uploadModalCancel" type="button">Cancel</button>
+        <button class="api-key-submit" id="uploadModalConfirm" type="button">Confirm Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const TRANSCRIBE_URL = "/transcribe";
+    const API_URL = "/query";
+    const RAG_UI_BUILD = "2026-06-17-youtube";
+    const UPLOAD_URL = "/upload";
+    const INGEST_URL = "/ingest";
+    const INGEST_STATUS_URL = "/ingest/status/";
+    const DOCUMENTS_URL = "/documents";
+    const VENDORS_URL = "/vendors";
+    const TITLE_MAX = 40;
+    const API_KEY_STORAGE = "rag_agent_api_key";
+    const DEV_MODE_STORAGE = "rag_agent_dev_mode";
+
+    const chat = document.getElementById("chat");
+    const chatInner = document.getElementById("chatInner");
+    const form = document.getElementById("composerForm");
+    const input = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const attachBtn = document.getElementById("attachBtn");
+    const micBtn = document.getElementById("micBtn");
+    const sttStatus = document.getElementById("sttStatus");
+    const sttAutoSendToggle = document.getElementById("sttAutoSendToggle");
+    const fileInput = document.getElementById("fileInput");
+    const uploadModal = document.getElementById("uploadModal");
+    const uploadModalFilename = document.getElementById("uploadModalFilename");
+    const uploadVendorSelect = document.getElementById("uploadVendorSelect");
+    const uploadDocTypeSelect = document.getElementById("uploadDocTypeSelect");
+    const uploadProductLineInput = document.getElementById("uploadProductLineInput");
+    const uploadSoftwareVersionInput = document.getElementById("uploadSoftwareVersionInput");
+    const uploadModalCancel = document.getElementById("uploadModalCancel");
+    const uploadModalConfirm = document.getElementById("uploadModalConfirm");
+
+    const UPLOAD_VENDOR_SLUGS = [
+      "pekat",
+      "mechmind",
+      "zivid",
+      "lmi",
+      "basler",
+      "photoneo",
+    ];
+    const newChatBtn = document.getElementById("newChatBtn");
+    const searchInput = document.getElementById("searchInput");
+    const historyList = document.getElementById("historyList");
+    const documentsPanel = document.getElementById("documentsPanel");
+    const documentsToggle = document.getElementById("documentsToggle");
+    const documentsBody = document.getElementById("documentsBody");
+    const documentsList = document.getElementById("documentsList");
+    const documentsRefreshBtn = document.getElementById("documentsRefreshBtn");
+    const documentsAddBtn = document.getElementById("documentsAddBtn");
+    const documentsDropzone = document.getElementById("documentsDropzone");
+    const docFileInput = document.getElementById("docFileInput");
+    const documentsStatus = document.getElementById("documentsStatus");
+    const ingestProgressList = document.getElementById("ingestProgressList");
+    const settingsBtn = document.getElementById("settingsBtn");
+    const apiKeyModal = document.getElementById("apiKeyModal");
+    const apiKeyInput = document.getElementById("apiKeyInput");
+    const apiKeySubmit = document.getElementById("apiKeySubmit");
+    const apiKeyCancel = document.getElementById("apiKeyCancel");
+    const devModeToggle = document.getElementById("devModeToggle");
+    const documentsVendorFilter = document.getElementById("documentsVendorFilter");
+    const chatToolbar = document.getElementById("chatToolbar");
+    const chatVendorSelect = document.getElementById("chatVendorSelect");
+    const chatProductSelect = document.getElementById("chatProductSelect");
+    const filterActivePill = document.getElementById("filterActivePill");
+    const filterActiveText = document.getElementById("filterActiveText");
+    const filterClearBtn = document.getElementById("filterClearBtn");
+    const ttsControls = document.getElementById("ttsControls");
+    const ttsToggleBtn = document.getElementById("ttsToggleBtn");
+    const ttsRateSlider = document.getElementById("ttsRateSlider");
+
+    let conversations = [];
+    let vendorsCatalog = [];
+    let chatFilter = { vendor: "", product: "" };
+    let activeConversationId = null;
+    let isLoading = false;
+    let activeAbortController = null;
+    let isDeletingDoc = false;
+    const activeIngestPolls = new Map();
+    let documentsOpen = false;
+    let documentsLoaded = false;
+
+    const STT_SUPPORTED =
+      typeof navigator !== "undefined" &&
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === "function" &&
+      typeof window.MediaRecorder !== "undefined";
+
+    let sttRecording = false;
+    let sttTranscribing = false;
+    let sttAutoSend = false;
+    let sttMediaRecorder = null;
+    let sttAudioChunks = [];
+    let sttMediaStream = null;
+    let sttRecorderMimeType = "";
+    let sttMicDenied = false;
+
+    function getApiKey() {
+      return localStorage.getItem(API_KEY_STORAGE) || "";
+    }
+
+    function setApiKey(key) {
+      const trimmed = (key || "").trim();
+      if (trimmed) {
+        localStorage.setItem(API_KEY_STORAGE, trimmed);
+      } else {
+        localStorage.removeItem(API_KEY_STORAGE);
+      }
+    }
+
+    function buildApiHeaders(extraHeaders) {
+      const headers = Object.assign({}, extraHeaders || {});
+      const key = getApiKey();
+      if (key) {
+        headers["X-API-Key"] = key;
+      }
+      return headers;
+    }
+
+    function isDevMode() {
+      return localStorage.getItem(DEV_MODE_STORAGE) === "true";
+    }
+
+    function setDevMode(enabled) {
+      localStorage.setItem(DEV_MODE_STORAGE, enabled ? "true" : "false");
+    }
+
+    function showApiKeyModal() {
+      apiKeyInput.value = getApiKey();
+      devModeToggle.checked = isDevMode();
+      if (sttAutoSendToggle) sttAutoSendToggle.checked = sttAutoSend;
+      apiKeyModal.classList.add("is-open");
+      apiKeyInput.focus();
+    }
+
+    function hideApiKeyModal() {
+      apiKeyModal.classList.remove("is-open");
+    }
+
+    function updateComposerControls() {
+      const busy = isLoading;
+      sendBtn.hidden = busy;
+      stopBtn.hidden = !busy;
+      sendBtn.disabled = busy;
+      input.disabled = busy;
+      attachBtn.disabled = busy;
+      if (micBtn) {
+        micBtn.disabled = busy || sttTranscribing || sttMicDenied;
+      }
+      documentsAddBtn.disabled = busy || isDeletingDoc;
+    }
+
+    function setSttStatus(message) {
+      if (sttStatus) sttStatus.textContent = message || "";
+    }
+
+    function updateSttUi() {
+      if (!micBtn) return;
+      micBtn.classList.toggle("recording", sttRecording);
+      micBtn.classList.toggle("transcribing", sttTranscribing);
+      if (sttTranscribing) {
+        setSttStatus("Transcribing…");
+        micBtn.setAttribute("aria-label", "Transcribing");
+      } else if (sttRecording) {
+        setSttStatus("Recording… release to transcribe");
+        micBtn.setAttribute("aria-label", "Recording — release to transcribe");
+      } else {
+        setSttStatus("");
+        micBtn.setAttribute(
+          "aria-label",
+          sttMicDenied
+            ? "Microphone access denied"
+            : "Hold to dictate query"
+        );
+      }
+      updateComposerControls();
+    }
+
+    function pickSttRecorderMimeType() {
+      const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+      ];
+      for (const mimeType of candidates) {
+        if (MediaRecorder.isTypeSupported(mimeType)) return mimeType;
+      }
+      return "";
+    }
+
+    function sttBlobExtension(mimeType) {
+      if (mimeType && mimeType.indexOf("ogg") >= 0) return "ogg";
+      return "webm";
+    }
+
+    async function startSttRecording() {
+      if (!STT_SUPPORTED || sttRecording || sttTranscribing || isLoading || sttMicDenied) {
+        return;
+      }
+      try {
+        sttMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (_err) {
+        sttMicDenied = true;
+        if (micBtn) {
+          micBtn.disabled = true;
+          micBtn.title = "Microphone access denied";
+        }
+        setSttStatus("Microphone access denied");
+        updateSttUi();
+        return;
+      }
+
+      sttAudioChunks = [];
+      sttRecorderMimeType = pickSttRecorderMimeType();
+      const options = sttRecorderMimeType ? { mimeType: sttRecorderMimeType } : {};
+      sttMediaRecorder = new MediaRecorder(sttMediaStream, options);
+      sttMediaRecorder.ondataavailable = function (event) {
+        if (event.data && event.data.size > 0) {
+          sttAudioChunks.push(event.data);
+        }
+      };
+      sttMediaRecorder.onstop = function () {
+        const mimeType =
+          sttRecorderMimeType ||
+          (sttMediaRecorder && sttMediaRecorder.mimeType) ||
+          "audio/webm";
+        stopSttMediaStream();
+        submitSttRecording(mimeType);
+      };
+      sttMediaRecorder.start();
+      sttRecording = true;
+      updateSttUi();
+    }
+
+    function stopSttMediaStream() {
+      if (sttMediaStream) {
+        sttMediaStream.getTracks().forEach(function (track) {
+          track.stop();
+        });
+        sttMediaStream = null;
+      }
+    }
+
+    function stopSttRecording() {
+      if (!sttRecording) return;
+      sttRecording = false;
+      updateSttUi();
+      if (sttMediaRecorder && sttMediaRecorder.state !== "inactive") {
+        sttMediaRecorder.stop();
+      } else {
+        stopSttMediaStream();
+        submitSttRecording(
+          sttRecorderMimeType ||
+            (sttMediaRecorder && sttMediaRecorder.mimeType) ||
+            "audio/webm"
+        );
+      }
+    }
+
+    async function submitSttRecording(mimeType) {
+      if (!sttAudioChunks.length) return;
+      const blob = new Blob(sttAudioChunks, { type: mimeType || "audio/webm" });
+      sttAudioChunks = [];
+      if (!blob.size) return;
+
+      sttTranscribing = true;
+      updateSttUi();
+
+      const ext = sttBlobExtension(mimeType);
+      const formData = new FormData();
+      formData.append("file", blob, "recording." + ext);
+
+      try {
+        const response = await apiFetch(TRANSCRIBE_URL, {
+          method: "POST",
+          body: formData,
+          promptApiKeyOn401: true,
+        });
+        if (!response.ok) {
+          let detail = "Transcription failed";
+          try {
+            const err = await response.json();
+            detail = err.detail || detail;
+          } catch (_parseErr) {}
+          setSttStatus(detail);
+          return;
+        }
+        const data = await response.json();
+        const text = (data.text || "").trim();
+        if (!text) {
+          setSttStatus("No speech detected");
+          return;
+        }
+        input.value = input.value
+          ? input.value.replace(/\s+$/, "") + (input.value.endsWith(" ") ? "" : " ") + text
+          : text;
+        autoResize();
+        input.focus();
+        setSttStatus("Transcript ready — review and press Enter to send");
+        if (sttAutoSend) {
+          form.requestSubmit();
+        }
+      } catch (err) {
+        setSttStatus(err.message || "Transcription failed");
+      } finally {
+        sttTranscribing = false;
+        updateSttUi();
+      }
+    }
+
+    function initSttControls() {
+      if (!micBtn) return;
+      if (!STT_SUPPORTED) {
+        micBtn.hidden = true;
+        return;
+      }
+      micBtn.hidden = false;
+      micBtn.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        startSttRecording();
+      });
+      micBtn.addEventListener("mouseup", function (event) {
+        event.preventDefault();
+        stopSttRecording();
+      });
+      micBtn.addEventListener("mouseleave", function () {
+        if (sttRecording) stopSttRecording();
+      });
+      micBtn.addEventListener("touchstart", function (event) {
+        event.preventDefault();
+        startSttRecording();
+      }, { passive: false });
+      micBtn.addEventListener("touchend", function (event) {
+        event.preventDefault();
+        stopSttRecording();
+      }, { passive: false });
+      micBtn.addEventListener("touchcancel", function () {
+        stopSttRecording();
+      }, { passive: false });
+      micBtn.addEventListener("contextmenu", function (event) {
+        event.preventDefault();
+      });
+      updateSttUi();
+    }
+
+    function runSttFeatureTest() {
+      return {
+        supported: STT_SUPPORTED,
+        micVisible: micBtn ? !micBtn.hidden : false,
+        autoSendDefaultOff: sttAutoSend === false,
+      };
+    }
+
+    window.__ragRunSttFeatureTest = runSttFeatureTest;
+
+    function setGenerating(generating) {
+      isLoading = generating;
+      updateComposerControls();
+    }
+
+    function stopGeneration() {
+      if (activeAbortController) {
+        activeAbortController.abort();
+      }
+      cancelStreamingTts();
+    }
+
+    const TTS_SUPPORTED =
+      typeof window !== "undefined" &&
+      "speechSynthesis" in window &&
+      typeof SpeechSynthesisUtterance !== "undefined";
+
+    let ttsEnabled = false;
+    let ttsRate = 1.05;
+    let ttsPreferredVoice = null;
+    let activeTtsSession = null;
+
+    const TTS_ABBREV_RE =
+      /\b(e\.g|i\.e|vs|etc|approx|dept|inc|ltd)\.$/i;
+    const TTS_TITLE_ABBREV_RE = /\b(Mr|Ms|Mrs|Dr|Prof|Fig|No|Vol|Eq)\.$/;
+
+    function isDecimalPoint(text, dotIndex) {
+      const prev = dotIndex > 0 ? text[dotIndex - 1] : "";
+      const next = dotIndex + 1 < text.length ? text[dotIndex + 1] : "";
+      return chIsDigit(prev) && chIsDigit(next);
+    }
+
+    function chIsDigit(ch) {
+      return ch >= "0" && ch <= "9";
+    }
+
+    function isAbbreviationPeriod(text, dotIndex) {
+      const windowStart = Math.max(0, dotIndex - 8);
+      const slice = text.slice(windowStart, dotIndex + 1);
+      if (TTS_ABBREV_RE.test(slice)) return true;
+      if (TTS_TITLE_ABBREV_RE.test(slice)) return true;
+      const next = dotIndex + 1 < text.length ? text[dotIndex + 1] : "";
+      if (next && /[a-z]/.test(next)) return true;
+      return false;
+    }
+
+    function extractCompleteSentences(buffer) {
+      const sentences = [];
+      let start = 0;
+      let i = 0;
+      while (i < buffer.length) {
+        const ch = buffer[i];
+        if (ch === "." || ch === "!" || ch === "?") {
+          const atEnd = i + 1 >= buffer.length;
+          const followedBySpace = !atEnd && /\s/.test(buffer[i + 1]);
+          if (atEnd || followedBySpace) {
+            if (ch === "." && (isDecimalPoint(buffer, i) || isAbbreviationPeriod(buffer, i))) {
+              i += 1;
+              continue;
+            }
+            let end = i + 1;
+            while (end < buffer.length && /\s/.test(buffer[end])) end += 1;
+            const sentence = buffer.slice(start, i + 1).trim();
+            if (sentence) sentences.push(sentence);
+            start = end;
+            i = end;
+            continue;
+          }
+        }
+        i += 1;
+      }
+      return { sentences, remainder: buffer.slice(start) };
+    }
+
+    function stripTextForTts(text) {
+      return String(text || "")
+        .replace(/```[\s\S]*?```/g, " ")
+        .replace(/`[^`]+`/g, " ")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\*([^*\n]+)\*/g, "$1")
+        .replace(/(^|\s)[*\-]\s+/g, "$1")
+        .replace(/(^|\n)\s*#{1,6}\s*/g, "$1")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/\/video\?[^\s]+/gi, " ")
+        .replace(/\/media\/[^\s]+/gi, " ")
+        .replace(/[*_#`]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function pickDefaultTtsVoice() {
+      if (!TTS_SUPPORTED) return null;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices.length) return null;
+      const english = voices.filter(function (v) {
+        return (v.lang || "").toLowerCase().startsWith("en");
+      });
+      const pool = english.length ? english : voices;
+      const preferred = pool.find(function (v) {
+        return /google|microsoft|natural|samantha|daniel|zira|david/i.test(v.name);
+      });
+      return (
+        preferred ||
+        pool.find(function (v) {
+          return (v.lang || "").toLowerCase() === "en-us";
+        }) ||
+        pool[0] ||
+        voices[0]
+      );
+    }
+
+    function refreshTtsVoice() {
+      ttsPreferredVoice = pickDefaultTtsVoice();
+    }
+
+    function speakTtsSentence(text) {
+      if (!TTS_SUPPORTED || !text) return;
+      const clean = stripTextForTts(text);
+      if (!clean) return;
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.rate = ttsRate;
+      if (ttsPreferredVoice) utter.voice = ttsPreferredVoice;
+      window.speechSynthesis.speak(utter);
+    }
+
+    function cancelStreamingTts() {
+      if (activeTtsSession) {
+        activeTtsSession.cancelled = true;
+        activeTtsSession = null;
+      }
+      if (TTS_SUPPORTED) {
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    function createStreamingTtsSession() {
+      cancelStreamingTts();
+      const session = {
+        cancelled: false,
+        buffer: "",
+        feed: function (chunk) {
+          if (this.cancelled || !ttsEnabled || !chunk) return;
+          this.buffer += chunk;
+          const split = extractCompleteSentences(this.buffer);
+          this.buffer = split.remainder;
+          for (const sentence of split.sentences) {
+            if (this.cancelled) return;
+            speakTtsSentence(sentence);
+          }
+        },
+        flush: function () {
+          if (this.cancelled || !ttsEnabled) return;
+          const tail = stripTextForTts(this.buffer);
+          this.buffer = "";
+          if (tail) speakTtsSentence(tail);
+        },
+      };
+      activeTtsSession = session;
+      return session;
+    }
+
+    function feedStreamingTts(chunk) {
+      if (!ttsEnabled || !activeTtsSession || activeTtsSession.cancelled) return;
+      activeTtsSession.feed(chunk);
+    }
+
+    function flushStreamingTts() {
+      if (!activeTtsSession || activeTtsSession.cancelled) return;
+      activeTtsSession.flush();
+      activeTtsSession = null;
+    }
+
+    function updateTtsToggleUi() {
+      if (!ttsToggleBtn) return;
+      ttsToggleBtn.classList.toggle("active", ttsEnabled);
+      ttsToggleBtn.setAttribute("aria-pressed", ttsEnabled ? "true" : "false");
+      ttsToggleBtn.title = ttsEnabled
+        ? "Read answers aloud (on)"
+        : "Read answers aloud (off)";
+    }
+
+    function initTtsControls() {
+      if (!TTS_SUPPORTED || !ttsControls) return;
+      ttsControls.hidden = false;
+      refreshTtsVoice();
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.addEventListener("voiceschanged", refreshTtsVoice);
+      }
+      updateTtsToggleUi();
+      if (ttsToggleBtn) {
+        ttsToggleBtn.addEventListener("click", function () {
+          ttsEnabled = !ttsEnabled;
+          if (!ttsEnabled) cancelStreamingTts();
+          updateTtsToggleUi();
+        });
+      }
+      if (ttsRateSlider) {
+        ttsRateSlider.addEventListener("input", function () {
+          ttsRate = Number(ttsRateSlider.value) || 1.05;
+        });
+        ttsRate = Number(ttsRateSlider.value) || 1.05;
+      }
+    }
+
+    function sleepMs(ms) {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, ms);
+      });
+    }
+
+    async function runTtsMockStreamTest() {
+      const spoken = [];
+      const originalSynth = window.speechSynthesis;
+      const mockSynth = {
+        pending: false,
+        speaking: false,
+        paused: false,
+        utterances: [],
+        speak: function (utter) {
+          this.utterances.push(utter);
+          spoken.push(utter.text);
+          if (utter.onend) utter.onend();
+        },
+        cancel: function () {
+          this.utterances = [];
+        },
+        getVoices: function () {
+          return originalSynth ? originalSynth.getVoices() : [];
+        },
+        addEventListener: function () {},
+        removeEventListener: function () {},
+      };
+      Object.defineProperty(window, "speechSynthesis", {
+        configurable: true,
+        writable: true,
+        value: mockSynth,
+      });
+
+      const results = {
+        ok: true,
+        errors: [],
+        spoken: [],
+        sentenceSplitChecks: [],
+      };
+
+      try {
+        const splitA = extractCompleteSentences(
+          "Set exposure to 2.5 ms. Th"
+        );
+        results.sentenceSplitChecks.push({
+          case: "decimal",
+          sentences: splitA.sentences,
+          remainder: splitA.remainder,
+          pass:
+            splitA.sentences.length === 1 &&
+            splitA.sentences[0].includes("2.5") &&
+            splitA.remainder.startsWith("Th"),
+        });
+
+        const splitB = extractCompleteSentences("Use e.g. soft triggers. Don");
+        results.sentenceSplitChecks.push({
+          case: "abbreviation",
+          sentences: splitB.sentences,
+          remainder: splitB.remainder,
+          pass:
+            splitB.sentences.length === 1 &&
+            splitB.sentences[0].includes("e.g.") &&
+            splitB.remainder.startsWith("Don"),
+        });
+
+        ttsEnabled = true;
+        const session = createStreamingTtsSession();
+        const sample =
+          "The Mech-Mind camera supports 2.5 MP resolution at 30 fps. " +
+          "Configure e.g. exposure via GenICam. " +
+          "See /video?path=demo.mp4 for details.";
+        const tokens = sample.match(/\S+\s*|\s+/g) || [sample];
+        for (const token of tokens) {
+          session.feed(token);
+          await sleepMs(5);
+        }
+        session.flush();
+
+        results.spoken = spoken.slice();
+        const noVideoUrl = results.spoken.every(function (s) {
+          return !/\/video\?/i.test(s);
+        });
+        const ordered =
+          results.spoken.length >= 2 &&
+          results.spoken[0].includes("2.5 MP") &&
+          results.spoken[1].includes("e.g.");
+        const noTokenFragments = results.spoken.every(function (s) {
+          return s.length > 12;
+        });
+
+        if (!results.sentenceSplitChecks.every(function (c) { return c.pass; })) {
+          results.ok = false;
+          results.errors.push("sentence split checks failed");
+        }
+        if (!noVideoUrl) {
+          results.ok = false;
+          results.errors.push("video URL was spoken");
+        }
+        if (!ordered) {
+          results.ok = false;
+          results.errors.push("spoken order/content mismatch");
+        }
+        if (!noTokenFragments) {
+          results.ok = false;
+          results.errors.push("token fragments detected");
+        }
+
+        spoken.length = 0;
+        const cancelSession = createStreamingTtsSession();
+        cancelSession.feed("This should be cancelled");
+        cancelStreamingTts();
+        cancelSession.feed(" immediately. Never spoken.");
+        cancelSession.flush();
+        if (spoken.length > 0) {
+          results.ok = false;
+          results.errors.push("cancel did not stop speech");
+        }
+        results.cancelPass = spoken.length === 0;
+
+        ttsEnabled = false;
+        cancelStreamingTts();
+        updateTtsToggleUi();
+      } catch (err) {
+        results.ok = false;
+        results.errors.push(String(err && err.message ? err.message : err));
+      } finally {
+        Object.defineProperty(window, "speechSynthesis", {
+          configurable: true,
+          writable: true,
+          value: originalSynth,
+        });
+      }
+
+      return results;
+    }
+
+    function runStripTextForTtsUnitTest() {
+      const sample = "* Step one\n*PEKAT* and **bold** and # Heading";
+      const out = stripTextForTts(sample);
+      const errors = [];
+      if (/[*_#`]/.test(out)) {
+        errors.push("stray markdown characters remain: " + out);
+      }
+      for (const word of ["Step", "one", "PEKAT", "bold", "Heading"]) {
+        if (!out.includes(word)) {
+          errors.push("missing word: " + word);
+        }
+      }
+      return { ok: errors.length === 0, out: out, errors: errors };
+    }
+
+    window.__ragRunTtsMockTest = runTtsMockStreamTest;
+    window.__ragRunStripTextForTtsUnitTest = runStripTextForTtsUnitTest;
+
+    async function apiFetch(url, options) {
+      const opts = options || {};
+      const promptApiKeyOn401 = opts.promptApiKeyOn401 === true;
+      const headers = buildApiHeaders(opts.headers);
+      const fetchOpts = Object.assign({}, opts);
+      delete fetchOpts.promptApiKeyOn401;
+      const response = await fetch(
+        url,
+        Object.assign(fetchOpts, { headers })
+      );
+      if (response.status === 401 && promptApiKeyOn401) {
+        showApiKeyModal();
+      }
+      return response;
+    }
+
+    function initApp() {
+      hideApiKeyModal();
+    }
+
+    function saveApiKeyFromModal() {
+      setApiKey(apiKeyInput.value);
+      setDevMode(devModeToggle.checked);
+      if (sttAutoSendToggle) {
+        sttAutoSend = sttAutoSendToggle.checked;
+      }
+      hideApiKeyModal();
+      loadVendorsCatalog();
+      renderChat();
+      input.focus();
+    }
+
+    function formatQueryMeta(meta) {
+      if (!meta || !isDevMode()) return "";
+      const parts = [];
+      if (meta.latency_ms != null) {
+        parts.push((meta.latency_ms / 1000).toFixed(1) + "s");
+      }
+      if (meta.cache_hit) {
+        parts.push("cache hit");
+      } else {
+        if (meta.chunks_after_rerank != null) {
+          parts.push(meta.chunks_after_rerank + " chunks");
+        }
+        if (meta.prompt_token_count != null) {
+          parts.push("~" + meta.prompt_token_count + " tok");
+        }
+        if (meta.top_vector_score != null) {
+          parts.push("vec " + meta.top_vector_score.toFixed(2));
+        }
+        if (meta.top_rerank_score != null) {
+          parts.push("rerank " + meta.top_rerank_score.toFixed(2));
+        }
+        const stageMs = [];
+        if (meta.embed_ms != null) stageMs.push("emb " + meta.embed_ms + "ms");
+        if (meta.qdrant_search_ms != null) stageMs.push("qd " + meta.qdrant_search_ms + "ms");
+        if (meta.rerank_ms != null) stageMs.push("rr " + meta.rerank_ms + "ms");
+        if (stageMs.length) parts.push(stageMs.join(" "));
+      }
+      if (meta.citations_count != null && meta.citations_count > 0) {
+        parts.push(meta.citations_count + " cites");
+      }
+      if (meta.answer_outcome === "generation_timeout") {
+        parts.push("gen timeout");
+      } else if (meta.answer_outcome === "generation_error") {
+        parts.push("gen error");
+      } else if (meta.answer_outcome === "empty_generation") {
+        parts.push("empty gen");
+      } else if (meta.insufficient_answer) {
+        parts.push("insufficient");
+      }
+      if (meta.empty_retrieval) {
+        parts.push("empty retrieval");
+      }
+      if (meta.pre_stream_ms != null) {
+        parts.push("pre " + (meta.pre_stream_ms / 1000).toFixed(1) + "s");
+      }
+      if (meta.llm_ttft_ms != null) {
+        parts.push("ttft " + meta.llm_ttft_ms + "ms");
+      }
+      if (meta.web_fallback_used) {
+        parts.push("web fallback");
+      }
+      if (meta.youtube_citations != null && meta.youtube_citations > 0) {
+        parts.push(meta.youtube_citations + " video");
+      }
+      parts.push("ui " + RAG_UI_BUILD);
+      return parts.join(" · ");
+    }
+
+    function updateDocumentsVendorFilter(documents) {
+      const vendors = new Set();
+      for (const doc of documents || []) {
+        if (doc.vendor) vendors.add(doc.vendor.toLowerCase());
+      }
+      const sorted = Array.from(vendors).sort();
+      if (!documentsVendorFilter) return;
+      const current = documentsVendorFilter.value;
+      documentsVendorFilter.innerHTML = '<option value="">All vendors</option>';
+      for (const vendor of sorted) {
+        const opt = document.createElement("option");
+        opt.value = vendor;
+        opt.textContent = vendor;
+        documentsVendorFilter.appendChild(opt);
+      }
+      documentsVendorFilter.value = current || "";
+    }
+
+    function populateChatProductOptions(vendorName) {
+      if (!chatProductSelect) return;
+      chatProductSelect.innerHTML = '<option value="">All products</option>';
+      if (!vendorName) {
+        chatProductSelect.disabled = true;
+        chatProductSelect.value = "";
+        return;
+      }
+      const entry = vendorsCatalog.find((v) => v.name === vendorName);
+      const products = entry && entry.products ? entry.products : [];
+      for (const product of products) {
+        const opt = document.createElement("option");
+        opt.value = product;
+        opt.textContent = product;
+        chatProductSelect.appendChild(opt);
+      }
+      chatProductSelect.disabled = false;
+      chatProductSelect.value = chatFilter.product || "";
+    }
+
+    function renderChatFilterUI() {
+      if (chatVendorSelect) {
+        chatVendorSelect.value = chatFilter.vendor || "";
+      }
+      populateChatProductOptions(chatFilter.vendor);
+      if (chatProductSelect && chatFilter.product) {
+        chatProductSelect.value = chatFilter.product;
+      }
+
+      const hasFilter = Boolean(chatFilter.vendor || chatFilter.product);
+      if (filterActivePill && filterActiveText) {
+        if (hasFilter) {
+          const parts = [];
+          if (chatFilter.vendor) parts.push(chatFilter.vendor);
+          if (chatFilter.product) parts.push(chatFilter.product);
+          filterActiveText.textContent = "Filtering: " + parts.join(" / ");
+          filterActivePill.classList.remove("hidden");
+        } else {
+          filterActivePill.classList.add("hidden");
+        }
+      }
+    }
+
+    function setChatFilter(vendor, product) {
+      chatFilter = {
+        vendor: vendor || "",
+        product: product || "",
+      };
+      renderChatFilterUI();
+    }
+
+    function clearChatFilter() {
+      setChatFilter("", "");
+    }
+
+    function buildQueryFilterBody() {
+      const body = {};
+      if (chatFilter.vendor) {
+        body.vendor = chatFilter.vendor;
+      }
+      if (chatFilter.product) {
+        body.product = chatFilter.product;
+      }
+      return body;
+    }
+
+    async function loadVendorsCatalog() {
+      if (!chatToolbar || !chatVendorSelect) return;
+      try {
+        const response = await apiFetch(VENDORS_URL, { promptApiKeyOn401: false });
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        const data = await response.json();
+        vendorsCatalog = Array.isArray(data.vendors) ? data.vendors : [];
+        chatVendorSelect.innerHTML = '<option value="">All vendors</option>';
+        for (const entry of vendorsCatalog) {
+          const opt = document.createElement("option");
+          opt.value = entry.name;
+          opt.textContent = entry.name;
+          chatVendorSelect.appendChild(opt);
+        }
+        chatToolbar.classList.remove("hidden");
+        renderChatFilterUI();
+      } catch (err) {
+        console.warn("Failed to load /vendors; filter dropdowns hidden:", err);
+        chatToolbar.classList.add("hidden");
+        vendorsCatalog = [];
+      }
+    }
+
+    function generateId() {
+      return "conv_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
+    }
+
+    function truncateTitle(text) {
+      const t = text.trim();
+      if (t.length <= TITLE_MAX) return t;
+      return t.slice(0, TITLE_MAX) + "…";
+    }
+
+    function formatTimestamp(date) {
+      const now = new Date();
+      const d = new Date(date);
+      const isToday =
+        d.getDate() === now.getDate() &&
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear();
+
+      const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      if (isToday) return time;
+      return d.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + time;
+    }
+
+    function getActiveConversation() {
+      return conversations.find((c) => c.id === activeConversationId) || null;
+    }
+
+    function createConversation() {
+      const conv = {
+        id: generateId(),
+        title: "New conversation",
+        timestamp: new Date(),
+        messages: [],
+      };
+      conversations.unshift(conv);
+      activeConversationId = conv.id;
+      return conv;
+    }
+
+    function conversationMatchesSearch(conv, query) {
+      if (!query) return true;
+      const haystack = [
+        conv.title,
+        ...conv.messages.map((m) => m.text),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    }
+
+    function renderHistoryList() {
+      const query = searchInput.value.trim().toLowerCase();
+      const filtered = conversations.filter((c) => conversationMatchesSearch(c, query));
+
+      historyList.innerHTML = "";
+
+      if (filtered.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "no-results";
+        empty.textContent = query ? "No results found" : "No conversations yet";
+        historyList.appendChild(empty);
+        return;
+      }
+
+      for (const conv of filtered) {
+        const row = document.createElement("div");
+        row.className =
+          "history-row" + (conv.id === activeConversationId ? " active" : "");
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "history-item";
+        btn.dataset.id = conv.id;
+
+        const title = document.createElement("div");
+        title.className = "history-title";
+        title.textContent = conv.title;
+
+        const time = document.createElement("div");
+        time.className = "history-time";
+        time.textContent = formatTimestamp(conv.timestamp);
+
+        btn.appendChild(title);
+        btn.appendChild(time);
+        btn.addEventListener("click", () => switchConversation(conv.id));
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "delete-chat-btn";
+        deleteBtn.setAttribute("aria-label", "Delete conversation");
+        deleteBtn.innerHTML =
+          '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path>' +
+          '<path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>' +
+          "</svg>";
+        deleteBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteConversation(conv.id);
+        });
+
+        row.appendChild(btn);
+        row.appendChild(deleteBtn);
+        historyList.appendChild(row);
+      }
+    }
+
+    function deleteConversation(id) {
+      if (isLoading) return;
+
+      const index = conversations.findIndex((c) => c.id === id);
+      if (index === -1) return;
+
+      const wasActive = id === activeConversationId;
+      conversations.splice(index, 1);
+
+      if (wasActive) {
+        if (conversations.length > 0) {
+          activeConversationId = conversations[0].id;
+        } else {
+          createConversation();
+        }
+        renderChat();
+      }
+
+      renderHistoryList();
+      input.focus();
+    }
+
+    function renderWelcome() {
+      const welcome = document.createElement("div");
+      welcome.className = "welcome";
+      welcome.innerHTML =
+        "<h2>Vision Systems Assistant</h2>" +
+        "<p>Ask about Pekat, Mechmind, Zivid, LMI, and other vendor documentation ingested into your knowledge base.</p>";
+      return welcome;
+    }
+
+    function formatCitationLabel(citation) {
+      const source = citation.source || "";
+      const filename =
+        citation.file_name ||
+        source.replace(/^data[/\\]/i, "").split(/[/\\]/).pop();
+      const startSeconds = citationStartSeconds(citation);
+      const timestamp =
+        isVideoCitation(citation) && startSeconds > 0
+          ? " @ " + formatVideoTimestamp(startSeconds)
+          : "";
+      const page =
+        citation.page !== undefined && citation.page !== null
+          ? " p." + (Number(citation.page) + 1)
+          : "";
+      const section = citation.section ? " §" + citation.section : "";
+      const vendor = citation.vendor ? citation.vendor + " · " : "";
+      let chunkPos = "";
+      if (
+        citation.chunk_index != null &&
+        citation.total_chunks != null &&
+        citation.total_chunks > 0
+      ) {
+        chunkPos =
+          " (" + (Number(citation.chunk_index) + 1) + "/" + citation.total_chunks + ")";
+      }
+      return vendor + filename + timestamp + page + section + chunkPos;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function renderMarkdown(text) {
+      let html = escapeHtml(text);
+      html = html.replace(/```([\s\S]*?)```/g, function (_m, code) {
+        return '<pre class="md-code"><code>' + code.trim() + "</code></pre>";
+      });
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/\n/g, "<br>");
+      return html;
+    }
+
+    function isMarkdownRenderingEnabled() {
+      return localStorage.getItem("markdownRendering") !== "false";
+    }
+
+    function formatCitations(citations) {
+      if (!citations || citations.length === 0) return "";
+      return (
+        "Sources: " +
+        citations.map(formatCitationLabel).join(" · ")
+      );
+    }
+
+    function citationYoutubeWatchUrl(citation) {
+      if (citation.youtube_url) {
+        return citation.youtube_url;
+      }
+      const videoId = parseYoutubeVideoId(citation);
+      if (!videoId) return null;
+      const start = citationStartSeconds(citation);
+      let url = "https://www.youtube.com/watch?v=" + encodeURIComponent(videoId);
+      if (start > 0) {
+        url += "&t=" + start + "s";
+      }
+      return url;
+    }
+
+    function parseYoutubeVideoId(citation) {
+      if (!citation) return null;
+      if (citation.video_id) {
+        return String(citation.video_id).trim();
+      }
+      return parseYoutubeVideoIdFromUrl(citation.youtube_url || citation.url || "");
+    }
+
+    function parseYoutubeVideoIdFromUrl(url) {
+      if (!url) return null;
+      const text = String(url);
+      let match = text.match(/(?:youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{6,})/i);
+      if (match) return match[1];
+      match = text.match(/[?&]v=([a-zA-Z0-9_-]{6,})/i);
+      if (match) return match[1];
+      return null;
+    }
+
+    function citationStartSeconds(citation) {
+      if (!citation) return 0;
+      const raw = citation.start_seconds;
+      if (raw != null && !Number.isNaN(Number(raw))) {
+        return Math.max(0, Math.round(Number(raw)));
+      }
+      const watchUrl = citation.youtube_url || "";
+      const match = watchUrl.match(/[?&]t=(\d+)/i);
+      if (match) {
+        return Math.max(0, parseInt(match[1], 10) || 0);
+      }
+      return 0;
+    }
+
+    function citationYoutubeEmbedSrc(citation) {
+      const videoId = parseYoutubeVideoId(citation);
+      if (!videoId) return null;
+      let url =
+        "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(videoId);
+      const start = citationStartSeconds(citation);
+      const params = ["rel=0", "modestbranding=1"];
+      if (start > 0) {
+        params.unshift("start=" + start);
+      }
+      return url + "?" + params.join("&");
+    }
+
+    function isYoutubeVideoCitation(citation) {
+      if (!citation) return false;
+      return Boolean(
+        citation.youtube_url ||
+          citation.video_id ||
+          parseYoutubeVideoIdFromUrl(citation.url || "")
+      );
+    }
+
+    function isLocalVideoCitation(citation) {
+      return Boolean(
+        isVideoCitation(citation) &&
+          citation.video_url &&
+          !isYoutubeVideoCitation(citation)
+      );
+    }
+
+    function youtubeCitationTitle(citation) {
+      const title = (citation.source || citation.file_name || "YouTube video").trim();
+      const startSeconds = citationStartSeconds(citation);
+      if (startSeconds > 0) {
+        return title + " @ " + formatVideoTimestamp(startSeconds);
+      }
+      return title;
+    }
+
+    function renderCitationsList(citations) {
+      const frag = document.createDocumentFragment();
+      frag.appendChild(document.createTextNode("Sources: "));
+      (citations || []).forEach(function (citation, index) {
+        if (index > 0) {
+          frag.appendChild(document.createTextNode(" · "));
+        }
+        if (isYoutubeVideoCitation(citation)) {
+          const link = document.createElement("a");
+          link.className = "citation-youtube-link";
+          link.href = citationYoutubeWatchUrl(citation);
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = youtubeCitationTitle(citation);
+          frag.appendChild(link);
+        } else {
+          frag.appendChild(
+            document.createTextNode(formatCitationLabel(citation))
+          );
+        }
+      });
+      return frag;
+    }
+
+    function setCitationsContent(element, citations) {
+      if (!element) return;
+      element.textContent = "";
+      if (!citations || !citations.length) return;
+      element.appendChild(renderCitationsList(citations));
+      const players = renderCitationPlayers(citations);
+      if (players) {
+        element.appendChild(players);
+      }
+    }
+
+    function renderCitationPlayers(citations) {
+      const youtubeCites = (citations || []).filter(isYoutubeVideoCitation);
+      const videoCites = (citations || []).filter(function (c) {
+        return isLocalVideoCitation(c) && citationVideoSrc(c);
+      });
+      if (!youtubeCites.length && !videoCites.length) return null;
+
+      const root = document.createElement("div");
+      root.className = "citation-players";
+
+      if (youtubeCites.length) {
+        const heading = document.createElement("div");
+        heading.className = "citation-video-heading";
+        heading.textContent = "Referenced videos";
+        root.appendChild(heading);
+
+        const youtubeVideos = document.createElement("div");
+        youtubeVideos.className = "citation-videos citation-youtube-videos";
+        youtubeCites.slice(0, 3).forEach(function (citation) {
+          youtubeVideos.appendChild(createYoutubeCitationElement(citation));
+        });
+        root.appendChild(youtubeVideos);
+      }
+
+      if (videoCites.length) {
+        const videos = document.createElement("div");
+        videos.className = "citation-videos";
+        videoCites.slice(0, 2).forEach(function (citation) {
+          videos.appendChild(createVideoCitationElement(citation));
+        });
+        root.appendChild(videos);
+      }
+
+      return root;
+    }
+
+    function citationImageSrc(citation) {
+      return citation.image_url || citation.thumbnail_uri || citation.media_uri || null;
+    }
+
+    function isVideoCitation(citation) {
+      return (
+        citation.content_type === "video_transcript" ||
+        citation.content_type === "video_frame"
+      );
+    }
+
+    function formatVideoTimestamp(seconds) {
+      const total = Math.max(0, Math.floor(Number(seconds) || 0));
+      const mins = Math.floor(total / 60);
+      const secs = total % 60;
+      return mins + ":" + String(secs).padStart(2, "0");
+    }
+
+    function citationVideoSrc(citation) {
+      if (!citation.video_url) return null;
+      const start = citation.start_seconds;
+      if (start == null || Number.isNaN(Number(start))) {
+        return citation.video_url;
+      }
+      return citation.video_url + "#t=" + Number(start);
+    }
+
+    function createVideoCitationElement(citation) {
+      const wrap = document.createElement("div");
+      wrap.className = "citation-video-wrap";
+
+      const startSeconds = Number(citation.start_seconds) || 0;
+      const meta = document.createElement("div");
+      meta.className = "citation-video-meta";
+      if (startSeconds > 0) {
+        meta.textContent =
+          formatCitationLabel(citation) + " · at " + formatVideoTimestamp(startSeconds);
+      } else {
+        meta.textContent = formatCitationLabel(citation);
+      }
+
+      const video = document.createElement("video");
+      video.className = "citation-video";
+      video.controls = true;
+      video.preload = "metadata";
+      video.playsInline = true;
+
+      const fallback = document.createElement("div");
+      fallback.className = "citation-video-fallback";
+      fallback.hidden = true;
+      const transcriptText = citation.text || "";
+      fallback.textContent = transcriptText
+        ? transcriptText + " (Video unavailable — transcript shown.)"
+        : "Video unavailable.";
+
+      video.addEventListener("loadedmetadata", function () {
+        if (startSeconds > 0) {
+          try {
+            video.currentTime = startSeconds;
+          } catch (_err) {
+            /* ignore seek errors before user gesture */
+          }
+        }
+      });
+
+      video.addEventListener("error", function () {
+        video.hidden = true;
+        fallback.hidden = false;
+      });
+
+      wrap.appendChild(meta);
+      wrap.appendChild(video);
+
+      if (transcriptText) {
+        const transcript = document.createElement("div");
+        transcript.className = "citation-video-transcript";
+        transcript.textContent = transcriptText;
+        wrap.appendChild(transcript);
+      }
+
+      wrap.appendChild(fallback);
+      video.src = citationVideoSrc(citation);
+      return wrap;
+    }
+
+    function createYoutubeCitationElement(citation) {
+      const wrap = document.createElement("div");
+      wrap.className = "citation-video-wrap citation-youtube-wrap";
+
+      const title = youtubeCitationTitle(citation);
+      const watchUrl = citationYoutubeWatchUrl(citation);
+      const meta = document.createElement("div");
+      meta.className = "citation-video-meta";
+      const link = document.createElement("a");
+      link.className = "citation-youtube-link";
+      link.href = watchUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = title;
+      meta.appendChild(link);
+      const startSeconds = citationStartSeconds(citation);
+      if (startSeconds > 0) {
+        meta.appendChild(
+          document.createTextNode(" · at " + formatVideoTimestamp(startSeconds))
+        );
+      }
+      wrap.appendChild(meta);
+
+      const embedSrc = citationYoutubeEmbedSrc(citation);
+      if (embedSrc) {
+        const iframe = document.createElement("iframe");
+        iframe.className = "citation-youtube-embed";
+        iframe.src = embedSrc;
+        iframe.title = title;
+        iframe.loading = "lazy";
+        iframe.allow =
+          "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+        iframe.allowFullscreen = true;
+        wrap.appendChild(iframe);
+      } else if (watchUrl) {
+        const openLink = document.createElement("a");
+        openLink.className = "citation-youtube-link";
+        openLink.href = watchUrl;
+        openLink.target = "_blank";
+        openLink.rel = "noopener noreferrer";
+        openLink.textContent = "Open on YouTube";
+        wrap.appendChild(openLink);
+      }
+
+      const transcriptText = citation.text || "";
+      if (transcriptText) {
+        const transcript = document.createElement("div");
+        transcript.className = "citation-video-transcript";
+        transcript.textContent = transcriptText;
+        wrap.appendChild(transcript);
+      }
+
+      return wrap;
+    }
+
+    function openImageLightbox(src, alt) {
+      const box = document.getElementById("imageLightbox");
+      const img = document.getElementById("imageLightboxImg");
+      if (!box || !img || !src) return;
+      img.src = src;
+      img.alt = alt || "Source image";
+      box.classList.add("open");
+      box.setAttribute("aria-hidden", "false");
+    }
+
+    function closeImageLightbox() {
+      const box = document.getElementById("imageLightbox");
+      const img = document.getElementById("imageLightboxImg");
+      if (!box || !img) return;
+      box.classList.remove("open");
+      box.setAttribute("aria-hidden", "true");
+      img.removeAttribute("src");
+    }
+
+    (function initImageLightbox() {
+      const box = document.getElementById("imageLightbox");
+      if (!box) return;
+      box.addEventListener("click", closeImageLightbox);
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeImageLightbox();
+      });
+    })();
+
+    function appendCitationMedia(content, citations) {
+      if (!content) return;
+
+      const imageCites = (citations || []).filter(function (c) {
+        return citationImageSrc(c);
+      });
+      if (!imageCites.length) return;
+
+      const prior = content.querySelector(".citation-media-root");
+      if (prior) prior.remove();
+
+      const root = document.createElement("div");
+      root.className = "citation-media-root";
+
+      const row = document.createElement("div");
+      row.className = "citation-thumbs";
+      imageCites.slice(0, 4).forEach(function (citation) {
+        const wrap = document.createElement("div");
+        wrap.className = "citation-thumb-wrap";
+        const img = document.createElement("img");
+        img.className = "citation-thumb";
+        img.alt = formatCitationLabel(citation);
+        img.loading = "lazy";
+        img.decoding = "async";
+        const src = citationImageSrc(citation);
+        img.addEventListener("click", function (event) {
+          event.stopPropagation();
+          openImageLightbox(src, img.alt);
+        });
+        img.addEventListener("error", function () {
+          wrap.remove();
+          if (!row.childElementCount) row.remove();
+        });
+        wrap.appendChild(img);
+        if (citation.content_type === "image_caption") {
+          const label = document.createElement("div");
+          label.className = "citation-thumb-label";
+          label.textContent = formatCitationLabel(citation);
+          wrap.appendChild(label);
+        }
+        img.src = src;
+        row.appendChild(wrap);
+      });
+      if (!row.childElementCount) return;
+      root.appendChild(row);
+
+      const bubble = content.querySelector(".bubble");
+      if (bubble && bubble.parentNode === content) {
+        content.insertBefore(root, bubble.nextSibling);
+      } else {
+        content.appendChild(root);
+      }
+    }
+
+    function applyMessageCitations(content, citations) {
+      if (!content || !citations || !citations.length) return;
+      appendCitationMedia(content, citations);
+      let citesEl = content.querySelector(".citations");
+      if (!citesEl) {
+        citesEl = document.createElement("div");
+        citesEl.className = "citations";
+      }
+      setCitationsContent(citesEl, citations);
+      const mediaRoot = content.querySelector(".citation-media-root");
+      if (mediaRoot) {
+        if (mediaRoot.nextSibling !== citesEl) {
+          content.insertBefore(citesEl, mediaRoot.nextSibling);
+        }
+      } else {
+        const bubble = content.querySelector(".bubble");
+        if (bubble && bubble.nextSibling !== citesEl) {
+          content.insertBefore(citesEl, bubble.nextSibling);
+        } else if (!citesEl.parentNode) {
+          content.appendChild(citesEl);
+        }
+      }
+    }
+
+    function runCitationYoutubeUnitTest() {
+      const errors = [];
+      const youtubeCitation = {
+        content_type: "video_transcript",
+        source: "Bin Picking Demo",
+        youtube_url: "https://www.youtube.com/watch?v=abc123&t=90s",
+        video_id: "abc123",
+        start_seconds: 90,
+        text: "Robot picks parts from the bin.",
+      };
+      const localCitation = {
+        content_type: "video_transcript",
+        source: "data/pekat/videos/demo/source.mp4",
+        video_url: "/video?path=data/pekat/videos/demo/source.mp4",
+        text: "Local clip transcript.",
+      };
+      const pdfCitation = {
+        content_type: "text",
+        source: "docs/pekat/manual.pdf",
+        file_name: "manual.pdf",
+        page: 2,
+        vendor: "pekat",
+      };
+
+      if (!isYoutubeVideoCitation(youtubeCitation)) {
+        errors.push("YouTube citation not detected");
+      }
+      if (!isLocalVideoCitation(localCitation)) {
+        errors.push("local video citation not detected");
+      }
+      if (isYoutubeVideoCitation(localCitation)) {
+        errors.push("local citation mistaken for YouTube");
+      }
+
+      const listHost = document.createElement("div");
+      listHost.className = "citations";
+      setCitationsContent(listHost, [youtubeCitation, pdfCitation]);
+      const link = listHost.querySelector("a.citation-youtube-link");
+      if (!link) {
+        errors.push("citations list missing YouTube link");
+      } else {
+        if (!String(link.href).includes("abc123")) {
+          errors.push("YouTube link href mismatch: " + link.href);
+        }
+        if (link.textContent !== youtubeCitationTitle(youtubeCitation)) {
+          errors.push("YouTube link label mismatch");
+        }
+        if (link.target !== "_blank") {
+          errors.push("YouTube link should open in new tab");
+        }
+      }
+      if (!listHost.querySelector(".citation-players iframe.citation-youtube-embed")) {
+        errors.push("citations block missing inline YouTube player");
+      }
+      const pdfText = listHost.textContent || "";
+      if (!pdfText.includes("manual.pdf")) {
+        errors.push("PDF citation missing from list");
+      }
+
+      const youtubeBlock = createYoutubeCitationElement(youtubeCitation);
+      if (youtubeBlock.querySelector("video")) {
+        errors.push("YouTube block must not use <video>");
+      }
+      if (!youtubeBlock.querySelector("iframe.citation-youtube-embed")) {
+        errors.push("YouTube block missing embed iframe");
+      }
+      const iframe = youtubeBlock.querySelector("iframe.citation-youtube-embed");
+      if (!iframe || !String(iframe.src).includes("start=90")) {
+        errors.push("YouTube embed missing start timestamp");
+      }
+      if (!iframe || !String(iframe.src).includes("youtube-nocookie.com")) {
+        errors.push("YouTube embed should use privacy-enhanced domain");
+      }
+      const blockLink = youtubeBlock.querySelector("a.citation-youtube-link");
+      if (!blockLink || !String(blockLink.href).includes("abc123")) {
+        errors.push("YouTube media block missing watch link");
+      }
+
+      const localBlock = createVideoCitationElement(localCitation);
+      if (!localBlock.querySelector("video.citation-video")) {
+        errors.push("local citation missing <video> player");
+      }
+      if (localBlock.querySelector("iframe")) {
+        errors.push("local citation must not use YouTube iframe");
+      }
+
+      return { ok: errors.length === 0, errors: errors };
+    }
+
+    window.__ragRunCitationYoutubeUnitTest = runCitationYoutubeUnitTest;
+
+    function attachFeedbackControls(content, msg) {
+      if (!msg || !msg.text || msg.feedbackSent) return;
+      if (!msg.question) return;
+
+      const row = document.createElement("div");
+      row.className = "feedback-row";
+
+      function sendRating(rating) {
+        apiFetch("/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: msg.question,
+            answer: msg.text,
+            rating: rating,
+            trace_id: (msg.meta && msg.meta.trace_id) || null,
+          }),
+        }).catch(function () {});
+        msg.feedbackSent = rating;
+        row.innerHTML = '<span class="feedback-thanks">Thanks for the feedback</span>';
+        saveConversations();
+      }
+
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "feedback-btn";
+      up.textContent = "👍";
+      up.title = "Helpful";
+      up.addEventListener("click", function () { sendRating(1); });
+
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "feedback-btn";
+      down.textContent = "👎";
+      down.title = "Not helpful";
+      down.addEventListener("click", function () { sendRating(-1); });
+
+      row.appendChild(up);
+      row.appendChild(down);
+      content.appendChild(row);
+    }
+
+    function createMessageElement(role, text, citations, meta, msg) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "message " + role;
+
+      const content = document.createElement("div");
+      content.className = "message-content";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      if (role === "assistant" && isMarkdownRenderingEnabled()) {
+        bubble.innerHTML = renderMarkdown(text);
+      } else {
+        bubble.textContent = text;
+      }
+      content.appendChild(bubble);
+
+      if (role === "assistant" && citations && citations.length > 0) {
+        applyMessageCitations(content, citations);
+      }
+
+      const metaText = formatQueryMeta(meta);
+      if (role === "assistant" && metaText) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "query-meta";
+        metaEl.textContent = metaText;
+        content.appendChild(metaEl);
+      }
+
+      if (role === "assistant" && msg) {
+        attachFeedbackControls(content, msg);
+      }
+
+      wrapper.appendChild(content);
+      return wrapper;
+    }
+
+    function createTypingIndicator() {
+      const wrapper = document.createElement("div");
+      wrapper.className = "message assistant typing";
+      wrapper.id = "typingIndicator";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.innerHTML =
+        '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+
+      wrapper.appendChild(bubble);
+      return wrapper;
+    }
+
+    function removeTypingIndicator() {
+      const indicator = document.getElementById("typingIndicator");
+      if (indicator) indicator.remove();
+    }
+
+    function renderChat() {
+      chatInner.innerHTML = "";
+      const conv = getActiveConversation();
+
+      if (!conv || conv.messages.length === 0) {
+        chatInner.appendChild(renderWelcome());
+        return;
+      }
+
+      for (const msg of conv.messages) {
+        chatInner.appendChild(
+          createMessageElement(msg.role, msg.text, msg.citations, msg.meta, msg)
+        );
+      }
+    }
+
+    function switchConversation(id) {
+      if (isLoading) return;
+      activeConversationId = id;
+      renderChat();
+      renderHistoryList();
+      scrollToBottom();
+      input.focus();
+    }
+
+    function startNewChat() {
+      if (isLoading) return;
+      cancelStreamingTts();
+      createConversation();
+      renderChat();
+      renderHistoryList();
+      input.focus();
+    }
+
+    function autoResize() {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 160) + "px";
+    }
+
+    function scrollToBottom() {
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function setLoading(loading) {
+      setGenerating(loading);
+    }
+
+    function formatDuration(seconds) {
+      if (seconds == null || isNaN(seconds)) return "—";
+      const s = Math.max(0, Math.floor(seconds));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      if (m > 0) return m + "m " + r + "s";
+      return r + "s";
+    }
+
+    function ingestStageLabel(stage) {
+      const labels = {
+        reading: "Reading",
+        embedding: "Embedding",
+        storing: "Storing",
+      };
+      return labels[stage] || stage;
+    }
+
+    function openDocumentsPanel() {
+      if (!documentsOpen) {
+        documentsOpen = true;
+        documentsPanel.classList.add("open");
+        documentsBody.hidden = false;
+        if (!documentsLoaded) {
+          loadDocuments();
+        }
+      }
+    }
+
+    function createIngestProgressCard(jobId, filename) {
+      const card = document.createElement("div");
+      card.className = "ingest-progress-card ingesting";
+      card.dataset.jobId = jobId;
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "ingest-progress-filename";
+      nameEl.textContent = filename;
+      nameEl.title = filename;
+
+      const stageEl = document.createElement("div");
+      stageEl.className = "ingest-progress-stage";
+      stageEl.textContent = "Reading…";
+
+      const barWrap = document.createElement("div");
+      barWrap.className = "ingest-progress-bar-wrap";
+      const bar = document.createElement("div");
+      bar.className = "ingest-progress-bar";
+      barWrap.appendChild(bar);
+
+      const meta = document.createElement("div");
+      meta.className = "ingest-progress-meta";
+      const countEl = document.createElement("span");
+      countEl.className = "ingest-progress-count";
+      countEl.textContent = "0 / — chunks";
+      const timeEl = document.createElement("span");
+      timeEl.className = "ingest-progress-time";
+      timeEl.textContent = "0s elapsed · — remaining";
+      meta.appendChild(countEl);
+      meta.appendChild(timeEl);
+
+      const footer = document.createElement("div");
+      footer.className = "ingest-progress-footer";
+
+      card.appendChild(nameEl);
+      card.appendChild(stageEl);
+      card.appendChild(barWrap);
+      card.appendChild(meta);
+      card.appendChild(footer);
+
+      card._refs = { stageEl, bar, countEl, timeEl, footer };
+      ingestProgressList.prepend(card);
+      return card;
+    }
+
+    function updateIngestProgressCard(card, status) {
+      const refs = card._refs;
+      if (!refs) return;
+
+      const total = status.chunks_total || 0;
+      const done = status.chunks_done || 0;
+      const pct =
+        total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+      refs.bar.style.width = pct + "%";
+      refs.countEl.textContent =
+        done.toLocaleString() +
+        " / " +
+        (total > 0 ? total.toLocaleString() : "—") +
+        " chunks";
+      refs.timeEl.textContent =
+        formatDuration(status.elapsed_seconds) +
+        " elapsed · " +
+        (status.status === "ingesting" && total > done && done > 0
+          ? formatDuration(status.estimated_remaining_seconds) + " remaining"
+          : status.status === "done"
+            ? "complete"
+            : "— remaining");
+
+      if (status.status === "ingesting") {
+        card.className = "ingest-progress-card ingesting";
+        refs.stageEl.textContent = ingestStageLabel(status.stage) + "…";
+        refs.footer.textContent = "";
+        refs.footer.className = "ingest-progress-footer";
+      } else if (status.status === "done") {
+        card.className = "ingest-progress-card done";
+        refs.stageEl.textContent = "Complete";
+        refs.bar.style.width = "100%";
+        refs.footer.className = "ingest-progress-success";
+        refs.footer.textContent =
+          status.filename +
+          " ready — " +
+          (status.chunks_done || 0).toLocaleString() +
+          " chunks ingested";
+      } else if (status.status === "error") {
+        card.className = "ingest-progress-card error";
+        refs.stageEl.textContent = "Failed";
+        refs.footer.className = "ingest-progress-error";
+        refs.footer.textContent = status.error || "Ingest failed";
+      }
+    }
+
+    function stopIngestPolling(jobId) {
+      const poll = activeIngestPolls.get(jobId);
+      if (poll) {
+        clearInterval(poll.intervalId);
+        activeIngestPolls.delete(jobId);
+      }
+    }
+
+    async function pollIngestStatus(jobId, card) {
+      try {
+        const response = await apiFetch(INGEST_STATUS_URL + encodeURIComponent(jobId));
+        if (response.status === 404) {
+          stopIngestPolling(jobId);
+          updateIngestProgressCard(card, {
+            status: "error",
+            error: "Job not found — the server may have restarted.",
+            filename: card.querySelector(".ingest-progress-filename")?.textContent,
+          });
+          return;
+        }
+        if (!response.ok) return;
+
+        const status = await response.json();
+        updateIngestProgressCard(card, status);
+
+        if (status.status === "done") {
+          stopIngestPolling(jobId);
+          loadDocuments();
+        } else if (status.status === "error") {
+          stopIngestPolling(jobId);
+        }
+      } catch (_) {}
+    }
+
+    function startIngestPolling(jobId, filename) {
+      openDocumentsPanel();
+      const card = createIngestProgressCard(jobId, filename);
+      pollIngestStatus(jobId, card);
+      const intervalId = setInterval(() => {
+        pollIngestStatus(jobId, card);
+      }, 2000);
+      activeIngestPolls.set(jobId, { intervalId, card });
+    }
+
+    function ensureConversation() {
+      let conv = getActiveConversation();
+      if (!conv) {
+        conv = createConversation();
+      }
+      return conv;
+    }
+
+    function addChatMessage(role, text) {
+      const conv = ensureConversation();
+      conv.messages.push({ role, text });
+      renderChat();
+      scrollToBottom();
+      return conv;
+    }
+
+    function buildRequestHistory(messages) {
+      return messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.text }));
+    }
+
+    async function sendMessage(text) {
+      const question = text.trim();
+      if (!question || isLoading) return;
+
+      cancelStreamingTts();
+
+      let conv = getActiveConversation();
+      if (!conv) {
+        conv = createConversation();
+      }
+
+      const isFirstMessage = conv.messages.length === 0;
+      if (isFirstMessage) {
+        conv.title = truncateTitle(question);
+        conv.timestamp = new Date();
+      }
+
+      const history = buildRequestHistory(conv.messages);
+
+      conv.messages.push({ role: "user", text: question });
+      renderChat();
+      renderHistoryList();
+      chatInner.appendChild(createTypingIndicator());
+      scrollToBottom();
+
+      input.value = "";
+      autoResize();
+      activeAbortController = new AbortController();
+      setGenerating(true);
+
+      const assistantMsg = {
+        role: "assistant",
+        text: "",
+        citations: [],
+        meta: null,
+        question: question,
+      };
+      let streamElement = null;
+      let streamBubble = null;
+      let streamCites = null;
+      let streamMeta = null;
+      let streamingStarted = false;
+      let ttsSession = null;
+
+      function ensureStreamMessage() {
+        if (streamingStarted) return;
+        streamingStarted = true;
+        removeTypingIndicator();
+        conv.messages.push(assistantMsg);
+        streamElement = createMessageElement("assistant", "", []);
+        streamBubble = streamElement.querySelector(".bubble");
+        streamCites = streamElement.querySelector(".citations");
+        streamBubble.classList.add("streaming");
+        chatInner.appendChild(streamElement);
+        if (ttsEnabled) {
+          ttsSession = createStreamingTtsSession();
+        }
+      }
+
+      function finishStreamMessage(citations, meta) {
+        if (streamBubble) {
+          streamBubble.classList.remove("streaming");
+        }
+        assistantMsg.citations = Array.isArray(citations) ? citations : [];
+        assistantMsg.meta = meta || null;
+        if (
+          assistantMsg.citations.length > 0 &&
+          !assistantMsg.text.trim() &&
+          meta &&
+          meta.answer_outcome &&
+          meta.answer_outcome !== "ok"
+        ) {
+          assistantMsg.text =
+            "Answer generation failed. Sources are shown below — please try again.";
+          if (streamBubble) {
+            streamBubble.textContent = assistantMsg.text;
+          }
+        }
+        if (streamElement && assistantMsg.citations.length > 0) {
+          const contentEl = streamElement.querySelector(".message-content");
+          if (contentEl) {
+            if (streamBubble && isMarkdownRenderingEnabled()) {
+              streamBubble.innerHTML = renderMarkdown(assistantMsg.text);
+            }
+            applyMessageCitations(contentEl, assistantMsg.citations);
+            if (
+              isDevMode() &&
+              meta &&
+              meta.youtube_citations > 0 &&
+              !contentEl.querySelector("iframe.citation-youtube-embed")
+            ) {
+              console.warn(
+                "Expected " +
+                  meta.youtube_citations +
+                  " YouTube player(s) but none rendered. Hard-refresh the page (Ctrl+Shift+R)."
+              );
+            }
+          }
+        }
+        const metaText = formatQueryMeta(assistantMsg.meta);
+        if (streamElement && metaText) {
+          if (streamMeta) {
+            streamMeta.textContent = metaText;
+          } else {
+            streamMeta = document.createElement("div");
+            streamMeta.className = "query-meta";
+            streamMeta.textContent = metaText;
+            streamElement.querySelector(".message-content").appendChild(streamMeta);
+          }
+        } else if (streamMeta) {
+          streamMeta.remove();
+          streamMeta = null;
+        }
+        if (streamElement) {
+          attachFeedbackControls(
+            streamElement.querySelector(".message-content"),
+            assistantMsg
+          );
+        }
+      }
+
+      try {
+        const response = await apiFetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            Object.assign(
+              {
+                question,
+                top_k: 10,
+                history,
+              },
+              buildQueryFilterBody()
+            )
+          ),
+          signal: activeAbortController.signal,
+        });
+
+        if (!response.ok) {
+          removeTypingIndicator();
+          let detail = "Request failed (" + response.status + ")";
+          try {
+            const err = await response.json();
+            detail = err.detail || detail;
+          } catch (_) {}
+          conv.messages.push({ role: "error", text: detail });
+        } else if (!response.body) {
+          removeTypingIndicator();
+          conv.messages.push({
+            role: "error",
+            text: "Streaming is not supported by this browser.",
+          });
+        } else {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          function processSseChunk(chunk) {
+            if (!chunk) return;
+            const line = chunk.trim();
+            if (!line.startsWith("data: ")) return;
+
+            let data;
+            try {
+              data = JSON.parse(line.slice(6));
+            } catch (_) {
+              return;
+            }
+
+            if (data.stage === "retrieval_complete") {
+              return;
+            }
+
+            if ("token" in data && data.token != null) {
+              ensureStreamMessage();
+              assistantMsg.text += data.token;
+              streamBubble.textContent = assistantMsg.text;
+              if (ttsSession) {
+                ttsSession.feed(data.token);
+              }
+              scrollToBottom();
+            }
+
+            if (data.done) {
+              ensureStreamMessage();
+              if (ttsSession) {
+                ttsSession.flush();
+                ttsSession = null;
+              }
+              finishStreamMessage(data.citations || [], data.meta || null);
+              if (data.error) {
+                assistantMsg.text +=
+                  assistantMsg.text ? "\n\n" : "";
+                assistantMsg.text += "[Error: " + data.error + "]";
+                if (streamBubble) {
+                  streamBubble.textContent = assistantMsg.text;
+                }
+              }
+            }
+          }
+
+          function processSseBuffer(text) {
+            const parts = text.split("\n\n");
+            const remainder = parts.pop() || "";
+            for (const part of parts) {
+              processSseChunk(part);
+            }
+            return remainder;
+          }
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (value) {
+              buffer += decoder.decode(value, { stream: true });
+              buffer = processSseBuffer(buffer);
+            }
+            if (done) {
+              buffer += decoder.decode(undefined, { stream: false });
+              processSseBuffer(buffer + "\n\n");
+              break;
+            }
+          }
+
+          if (!streamingStarted) {
+            removeTypingIndicator();
+            conv.messages.push({
+              role: "assistant",
+              text: "No answer returned.",
+              citations: [],
+            });
+          }
+        }
+      } catch (error) {
+        removeTypingIndicator();
+        if (ttsSession) {
+          cancelStreamingTts();
+          ttsSession = null;
+        }
+        if (error.name === "AbortError") {
+          if (streamingStarted && streamBubble) {
+            streamBubble.classList.remove("streaming");
+            const suffix = "\n\n[Generation stopped]";
+            assistantMsg.text = assistantMsg.text
+              ? assistantMsg.text + suffix
+              : "[Generation stopped]";
+            streamBubble.textContent = assistantMsg.text;
+          }
+        } else if (streamingStarted && streamBubble) {
+          streamBubble.classList.remove("streaming");
+          assistantMsg.text +=
+            (assistantMsg.text ? "\n\n" : "") +
+            "[Error: " +
+            (error.message || "Connection failed") +
+            "]";
+          streamBubble.textContent = assistantMsg.text;
+        } else {
+          conv.messages.push({
+            role: "error",
+            text:
+              error.message ||
+              "Could not reach the API. Is the server running on port 8000?",
+          });
+        }
+      } finally {
+        activeAbortController = null;
+        setGenerating(false);
+        if (!streamingStarted) {
+          renderChat();
+        }
+        renderHistoryList();
+        scrollToBottom();
+        input.focus();
+      }
+    }
+
+    input.addEventListener("input", autoResize);
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      sendMessage(input.value);
+    });
+
+    stopBtn.addEventListener("click", stopGeneration);
+
+    function showUploadError(message, fromDocuments) {
+      if (fromDocuments) {
+        setDocumentsStatus(message, "error");
+      } else {
+        addChatMessage("error", message);
+      }
+    }
+
+    function inferVendorFromFilename(fileName) {
+      const lower = (fileName || "").toLowerCase();
+      for (const slug of UPLOAD_VENDOR_SLUGS) {
+        if (lower.includes(slug)) {
+          return slug;
+        }
+      }
+      return "other";
+    }
+
+    let uploadModalResolver = null;
+
+    function showUploadMetadataModal(file) {
+      return new Promise((resolve) => {
+        const name = file.name || "document";
+        uploadModalFilename.textContent = name;
+        uploadVendorSelect.value = inferVendorFromFilename(name);
+        uploadDocTypeSelect.value = "user_manual";
+        uploadProductLineInput.value = "";
+        uploadSoftwareVersionInput.value = "";
+        uploadModalResolver = resolve;
+        uploadModal.classList.add("is-open");
+        uploadModal.setAttribute("aria-hidden", "false");
+        uploadProductLineInput.focus();
+      });
+    }
+
+    function hideUploadMetadataModal(result) {
+      uploadModal.classList.remove("is-open");
+      uploadModal.setAttribute("aria-hidden", "true");
+      if (uploadModalResolver) {
+        uploadModalResolver(result);
+        uploadModalResolver = null;
+      }
+    }
+
+    function confirmUploadMetadata() {
+      const productLine = uploadProductLineInput.value.trim();
+      const softwareVersion = uploadSoftwareVersionInput.value.trim();
+      hideUploadMetadataModal({
+        vendor: uploadVendorSelect.value,
+        document_type: uploadDocTypeSelect.value,
+        product_line: productLine || undefined,
+        software_version: softwareVersion || undefined,
+      });
+    }
+
+    function cancelUploadMetadata() {
+      hideUploadMetadataModal(null);
+    }
+
+    async function uploadFile(file, options = {}) {
+      const { fromDocuments = false, metadata = null } = options;
+      if (!file || isLoading || !metadata) return;
+
+      const name = file.name || "document";
+      const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")).toLowerCase() : "";
+      if (ext !== ".pdf" && ext !== ".txt") {
+        showUploadError("Only PDF and TXT files are supported.", fromDocuments);
+        return;
+      }
+
+      if (fromDocuments) {
+        openDocumentsPanel();
+        setDocumentsStatus("Uploading " + name + "…", "");
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("vendor", metadata.vendor);
+        formData.append("document_type", metadata.document_type);
+        if (metadata.product_line) {
+          formData.append("product_line", metadata.product_line);
+        }
+        if (metadata.software_version) {
+          formData.append("software_version", metadata.software_version);
+        }
+
+        const response = await apiFetch(UPLOAD_URL, {
+          method: "POST",
+          body: formData,
+          promptApiKeyOn401: true,
+        });
+
+        if (!response.ok) {
+          let detail = "Upload failed (" + response.status + ")";
+          try {
+            const err = await response.json();
+            detail = err.detail || detail;
+          } catch (_) {}
+          showUploadError("Failed to upload " + name + ": " + detail, fromDocuments);
+        } else {
+          const data = await response.json();
+          if (data.job_id) {
+            if (fromDocuments) {
+              setDocumentsStatus("", "");
+            }
+            startIngestPolling(data.job_id, data.filename || name);
+          } else {
+            showUploadError(
+              "Upload succeeded but no job ID was returned.",
+              fromDocuments
+            );
+          }
+        }
+      } catch (error) {
+        showUploadError(
+          "Failed to upload " + name + ": " + (error.message || "Network error"),
+          fromDocuments
+        );
+      } finally {
+        if (fromDocuments) {
+          docFileInput.value = "";
+        } else {
+          fileInput.value = "";
+          input.focus();
+        }
+      }
+    }
+
+    async function uploadFilesFromDocuments(fileList) {
+      if (!fileList || !fileList.length || isLoading) return;
+      openDocumentsPanel();
+      for (const file of fileList) {
+        const metadata = await showUploadMetadataModal(file);
+        if (!metadata) {
+          docFileInput.value = "";
+          continue;
+        }
+        await uploadFile(file, { fromDocuments: true, metadata });
+      }
+    }
+
+    async function promptAndUploadFile(file, fromDocuments) {
+      const metadata = await showUploadMetadataModal(file);
+      if (!metadata) {
+        if (fromDocuments) {
+          docFileInput.value = "";
+        } else {
+          fileInput.value = "";
+        }
+        return;
+      }
+      await uploadFile(file, { fromDocuments, metadata });
+    }
+
+    attachBtn.addEventListener("click", () => {
+      if (!isLoading) {
+        fileInput.click();
+      }
+    });
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (file) {
+        promptAndUploadFile(file, false);
+      }
+    });
+
+    uploadModalCancel.addEventListener("click", cancelUploadMetadata);
+    uploadModalConfirm.addEventListener("click", confirmUploadMetadata);
+    uploadModal.addEventListener("click", (e) => {
+      if (e.target === uploadModal) {
+        cancelUploadMetadata();
+      }
+    });
+
+    function displayFilename(source) {
+      return (source || "")
+        .replace(/^data[/\\]/i, "")
+        .split(/[/\\]/)
+        .pop();
+    }
+
+    function setDocumentsStatus(message, type) {
+      documentsStatus.textContent = message;
+      documentsStatus.className =
+        "documents-status" + (type ? " " + type : "");
+    }
+
+    function groupDocumentsByVendor(documents) {
+      const groups = new Map();
+      for (const doc of documents) {
+        const vendor = (doc.vendor || "other").toLowerCase();
+        if (!groups.has(vendor)) {
+          groups.set(vendor, []);
+        }
+        groups.get(vendor).push(doc);
+      }
+      return Array.from(groups.entries()).sort((a, b) =>
+        a[0].localeCompare(b[0])
+      );
+    }
+
+    function formatIngestedAt(timestamp) {
+      if (!timestamp) return "";
+      try {
+        const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) return "";
+        return date.toLocaleDateString();
+      } catch (_) {
+        return "";
+      }
+    }
+
+    let documentsCache = [];
+
+    function renderDocumentsList(documents) {
+      documentsList.innerHTML = "";
+      const vendorFilter = documentsVendorFilter
+        ? documentsVendorFilter.value
+        : "";
+      const visible = vendorFilter
+        ? (documents || []).filter(
+            (doc) => (doc.vendor || "").toLowerCase() === vendorFilter
+          )
+        : documents || [];
+      if (!visible || visible.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "documents-empty";
+        empty.textContent = vendorFilter
+          ? "No documents for this vendor"
+          : "No documents ingested yet";
+        documentsList.appendChild(empty);
+        return;
+      }
+
+      const grouped = groupDocumentsByVendor(visible);
+      const showVendorHeaders = grouped.length > 1;
+
+      for (const [vendor, docs] of grouped) {
+        if (showVendorHeaders) {
+          const header = document.createElement("div");
+          header.className = "document-vendor-header";
+          header.textContent = vendor;
+          documentsList.appendChild(header);
+        }
+
+        for (const doc of docs) {
+          const row = document.createElement("div");
+          row.className = "document-row";
+          row.dataset.source = doc.source;
+
+          const info = document.createElement("div");
+          info.className = "document-info";
+
+          const name = document.createElement("div");
+          name.className = "document-name";
+          name.textContent = doc.file_name || displayFilename(doc.source);
+          name.title = doc.source;
+
+          const chunks = document.createElement("div");
+          chunks.className = "document-chunks";
+          const totalLabel =
+            doc.total_chunks && doc.total_chunks !== doc.chunks
+              ? doc.chunks + " / " + doc.total_chunks + " chunks"
+              : doc.chunks + " chunks";
+          chunks.textContent = totalLabel;
+
+          const meta = document.createElement("div");
+          meta.className = "document-meta-line";
+          const metaParts = [];
+          if (!showVendorHeaders && doc.vendor) {
+            metaParts.push(doc.vendor);
+          }
+          if (doc.document_type) {
+            metaParts.push(doc.document_type);
+          }
+          const ingested = formatIngestedAt(doc.ingestion_timestamp);
+          if (ingested) {
+            metaParts.push("ingested " + ingested);
+          }
+          meta.textContent = metaParts.join(" · ");
+
+          info.appendChild(name);
+          info.appendChild(chunks);
+          if (meta.textContent) {
+            info.appendChild(meta);
+          }
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.className = "document-delete-btn";
+          deleteBtn.textContent = "Delete";
+          deleteBtn.addEventListener("click", () => {
+            deleteDocumentBySource(doc.source);
+          });
+
+          row.appendChild(info);
+          row.appendChild(deleteBtn);
+          documentsList.appendChild(row);
+        }
+      }
+    }
+
+    async function loadDocuments() {
+      documentsRefreshBtn.disabled = true;
+      setDocumentsStatus("Loading…", "");
+
+      try {
+        const response = await apiFetch(DOCUMENTS_URL);
+        if (!response.ok) {
+          let detail = "Failed to load documents";
+          try {
+            const err = await response.json();
+            detail = err.detail || detail;
+          } catch (_) {}
+          setDocumentsStatus(detail, "error");
+          return;
+        }
+        const data = await response.json();
+        documentsLoaded = true;
+        documentsCache = data.documents || [];
+        updateDocumentsVendorFilter(documentsCache);
+        renderDocumentsList(documentsCache);
+        setDocumentsStatus("", "");
+      } catch (error) {
+        setDocumentsStatus(
+          error.message || "Could not reach the API.",
+          "error"
+        );
+      } finally {
+        documentsRefreshBtn.disabled = false;
+      }
+    }
+
+    async function deleteDocumentBySource(source) {
+      if (!source || isDeletingDoc || isLoading) return;
+
+      isDeletingDoc = true;
+      documentsList
+        .querySelectorAll(".document-delete-btn, .doc-delete-btn")
+        .forEach((btn) => {
+          btn.disabled = true;
+        });
+      setDocumentsStatus("Deleting…", "");
+
+      try {
+        const response = await apiFetch(INGEST_URL, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file_path: source }),
+          promptApiKeyOn401: true,
+        });
+
+        if (!response.ok) {
+          let detail = "Delete failed";
+          try {
+            const err = await response.json();
+            detail = err.detail || detail;
+          } catch (_) {}
+          setDocumentsStatus(detail, "error");
+        } else {
+          const data = await response.json();
+          const row = documentsList.querySelector(
+            '[data-source="' + CSS.escape(source) + '"]'
+          );
+          if (row) row.remove();
+          if (!documentsList.querySelector(".document-row")) {
+            renderDocumentsList([]);
+          }
+          setDocumentsStatus(
+            "Deleted — " + data.deleted + " chunks removed",
+            "success"
+          );
+        }
+      } catch (error) {
+        setDocumentsStatus(
+          error.message || "Could not reach the API.",
+          "error"
+        );
+      } finally {
+        isDeletingDoc = false;
+        documentsList
+          .querySelectorAll(".document-delete-btn")
+          .forEach((btn) => {
+            btn.disabled = false;
+          });
+        documentsAddBtn.disabled = isLoading;
+      }
+    }
+
+    documentsToggle.addEventListener("click", () => {
+      documentsOpen = !documentsOpen;
+      documentsPanel.classList.toggle("open", documentsOpen);
+      documentsBody.hidden = !documentsOpen;
+      if (documentsOpen) {
+        loadDocuments();
+      }
+    });
+
+    documentsRefreshBtn.addEventListener("click", loadDocuments);
+    if (documentsVendorFilter) {
+      documentsVendorFilter.addEventListener("change", () => {
+        renderDocumentsList(documentsCache);
+      });
+    }
+
+    documentsAddBtn.addEventListener("click", () => {
+      if (!isLoading) {
+        docFileInput.click();
+      }
+    });
+
+    docFileInput.addEventListener("change", () => {
+      if (docFileInput.files && docFileInput.files.length) {
+        uploadFilesFromDocuments(Array.from(docFileInput.files));
+      }
+    });
+
+    documentsDropzone.addEventListener("click", () => {
+      if (!isLoading) {
+        docFileInput.click();
+      }
+    });
+
+    documentsDropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      documentsDropzone.classList.add("dragover");
+    });
+
+    documentsDropzone.addEventListener("dragleave", () => {
+      documentsDropzone.classList.remove("dragover");
+    });
+
+    documentsDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      documentsDropzone.classList.remove("dragover");
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        uploadFilesFromDocuments(Array.from(e.dataTransfer.files));
+      }
+    });
+
+    newChatBtn.addEventListener("click", startNewChat);
+
+    searchInput.addEventListener("input", renderHistoryList);
+
+    settingsBtn.addEventListener("click", showApiKeyModal);
+
+    apiKeyCancel.addEventListener("click", hideApiKeyModal);
+
+    apiKeySubmit.addEventListener("click", saveApiKeyFromModal);
+
+    apiKeyInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveApiKeyFromModal();
+      }
+    });
+
+    if (chatVendorSelect) {
+      chatVendorSelect.addEventListener("change", () => {
+        const vendor = chatVendorSelect.value || "";
+        setChatFilter(vendor, "");
+      });
+    }
+    if (chatProductSelect) {
+      chatProductSelect.addEventListener("change", () => {
+        setChatFilter(chatFilter.vendor, chatProductSelect.value || "");
+      });
+    }
+    if (filterClearBtn) {
+      filterClearBtn.addEventListener("click", clearChatFilter);
+    }
+
+    createConversation();
+    renderChat();
+    renderHistoryList();
+    initApp();
+    initTtsControls();
+    initSttControls();
+    loadVendorsCatalog();
+  </script>
+</body>
+</html>

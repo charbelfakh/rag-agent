@@ -1,0 +1,12 @@
+{
+  "dataset": "eval/dataset.jsonl",
+  "count": 0,
+  "recall_at_5": 0.0,
+  "recall_at_10": 0.0,
+  "mrr": 0.0,
+  "mean_top_vector_score": null,
+  "mean_embed_ms": null,
+  "mean_search_ms": null,
+  "mean_rerank_ms": null,
+  "_note": "Run: python eval/run_retrieval_eval.py --write-baseline after ingesting docs and tuning the index."
+}

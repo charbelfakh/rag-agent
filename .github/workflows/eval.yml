@@ -1,0 +1,33 @@
+name: Retrieval Eval
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+      - name: Run unit tests
+        run: python -m pytest tests/ -q
+
+  retrieval-metrics:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Check eval metrics vs baseline (offline)
+        run: python -m pytest tests/test_sprint_b_eval.py tests/test_sprint_i.py -q

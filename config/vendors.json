@@ -1,0 +1,18 @@
+{
+  "vendors": {},
+  "custom_folders": [
+    "lmi",
+    "mechmind",
+    "pekat",
+    "zivid",
+    "general"
+  ],
+  "keywords": {},
+  "youtube_channels": {},
+  "youtube_channel_names": {
+    "pekat": ["pekat", "pekat vision", "pekatvision"],
+    "lmi": ["lmi", "lmi technologies", "gocator"],
+    "mechmind": ["mech-mind", "mechmind", "mech mind"],
+    "zivid": ["zivid"]
+  }
+}

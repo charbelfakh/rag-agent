@@ -1,0 +1,3 @@
+{"id": "smoke-definitional-01", "question": "What is machine vision?", "expected_sources": ["data/manual.pdf", "docs/pekat/vision_manual.pdf"], "expected_pages": [], "tags": ["definitional", "smoke"]}
+{"id": "smoke-calibration-01", "question": "How do I calibrate a vision system?", "expected_sources": ["data/manual.pdf", "docs/zivid/calibration_guide.pdf"], "expected_pages": [], "tags": ["calibration", "smoke"]}
+{"id": "smoke-bin-picking-01", "question": "How does Mech-Mind bin picking work?", "expected_sources": ["docs/mechmind/bin_picking_tutorial.pdf"], "expected_pages": [], "tags": ["mechmind", "smoke"]}

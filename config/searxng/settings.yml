@@ -1,0 +1,11 @@
+use_default_settings: true
+
+server:
+  secret_key: "changeme-random-string-here"
+  limiter: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
