@@ -341,7 +341,10 @@ def _process_url_ingest(
 
 
 def infer_vendor_from_path(file_path: str) -> str | None:
-    parts = Path(file_path).as_posix().split("/")
+    # Normalize backslashes up front so a Windows-style path resolves the same
+    # on any OS — on Linux ``\`` is a literal filename char, not a separator,
+    # so ``Path(...).as_posix()`` alone would not split it.
+    parts = Path(file_path.replace("\\", "/")).as_posix().split("/")
     try:
         data_idx = parts.index("data")
     except ValueError:
