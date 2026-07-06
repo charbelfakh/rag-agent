@@ -83,7 +83,10 @@ pywin32==312; sys_platform == "win32"
 PyYAML==6.0.3
 qdrant-client==1.18.0
 redis==8.0.0
-redisvl>=0.4.0
+# redisvl is optional (RedisVL O(1) cache backend, SEMANTIC_CACHE_BACKEND=redisvl).
+# It caps redis-py at <8, so it cannot be installed alongside redis==8.0.0; the
+# cache falls back to the legacy backend when it is absent. To use it, install
+# separately with a compatible redis: pip install "redisvl>=0.4.0" "redis<8".
 regex==2026.5.9
 requests==2.34.2
 requests-toolbelt==1.0.0
