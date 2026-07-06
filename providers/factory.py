@@ -6,6 +6,7 @@ from providers.base import LLMProvider, EmbedProvider, VectorStore, Reranker
 load_dotenv()
 
 _llm: LLMProvider | None = None
+_fast_llm: LLMProvider | None = None
 _embedder: EmbedProvider | None = None
 _vector_store: VectorStore | None = None
 
@@ -16,8 +17,9 @@ _vlm = None
 
 def reset_providers() -> None:
     """Clear cached provider instances (for tests)."""
-    global _llm, _embedder, _vector_store, _reranker, _image_embedder, _vlm
+    global _llm, _fast_llm, _embedder, _vector_store, _reranker, _image_embedder, _vlm
     _llm = None
+    _fast_llm = None
     _embedder = None
     _vector_store = None
     _reranker = None
@@ -40,9 +42,51 @@ def get_llm() -> LLMProvider:
     elif provider == "vlm":
         from providers.vlm_llm import VLMLLM
         _llm = VLMLLM()
+    elif provider == "anthropic":
+        from providers.anthropic_llm import AnthropicLLM
+        _llm = AnthropicLLM()
+    elif provider == "openai":
+        from providers.openai_llm import OpenAILLM
+        _llm = OpenAILLM()
+    elif provider == "gemini":
+        from providers.gemini_llm import GeminiLLM
+        _llm = GeminiLLM()
+    elif provider == "claude_subscription":
+        from providers.claude_subscription_llm import ClaudeSubscriptionLLM
+        _llm = ClaudeSubscriptionLLM()
+    elif provider in ("claude_cli", "claude_code"):
+        from providers.claude_cli_llm import ClaudeCLILLM
+        _llm = ClaudeCLILLM()
     else:
         raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
     return _llm
+
+
+def get_fast_llm() -> LLMProvider:
+    """Return a cheaper "fast tier" LLM for short pre-retrieval calls (HyDE, sufficiency).
+
+    On ``LLM_PROVIDER=anthropic`` this is a Haiku-configured ``AnthropicLLM``
+    with a small ``max_tokens`` cap — a one-line hypothetical document or a
+    YES/NO sufficiency check does not need the synthesis-grade model or its full
+    token budget. For every other provider (ollama, subscription, ...) it
+    returns the main :func:`get_llm` instance unchanged, so those paths keep
+    their current behavior. A Claude *subscription* is a flat fee (not metered),
+    so per-token tiering there would not lower a bill; that path stays on the
+    main model by design.
+    """
+    global _fast_llm
+    if _fast_llm is not None:
+        return _fast_llm
+    if os.getenv("LLM_PROVIDER", "ollama") == "anthropic":
+        from providers.anthropic_llm import AnthropicLLM
+
+        _fast_llm = AnthropicLLM(
+            model=os.getenv("LLM_FAST_MODEL", "claude-haiku-4-5"),
+            max_tokens=int(os.getenv("LLM_FAST_MAX_TOKENS", "512")),
+        )
+    else:
+        _fast_llm = get_llm()
+    return _fast_llm
 
 
 def get_embedder() -> EmbedProvider:

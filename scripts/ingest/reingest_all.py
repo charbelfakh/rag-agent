@@ -32,7 +32,9 @@ load_dotenv()
 
 from providers.config_paths import DATA_DIR
 
-STATE_FILE = DATA_DIR / "reingest_state.json"
+# Resolved at import so each process (e.g. one per vendor in a parallel run)
+# can own a separate state file via REINGEST_STATE_PATH and not clobber others.
+STATE_FILE = Path(os.getenv("REINGEST_STATE_PATH") or (DATA_DIR / "reingest_state.json"))
 LOG_DIR = Path("logs")
 
 logger = logging.getLogger("reingest_all")
@@ -365,11 +367,27 @@ def check_qdrant_collection(embed_dim: int) -> None:
 
     existing = collection_vector_size(client, collection)
     if existing is None:
-        client.create_collection(
-            collection_name=collection,
-            vectors_config=VectorParams(size=embed_dim, distance=Distance.COSINE),
+        from providers.sparse_text import SPARSE_VECTOR_NAME, is_sparse_enabled
+
+        create_kwargs: dict = {
+            "collection_name": collection,
+            "vectors_config": VectorParams(size=embed_dim, distance=Distance.COSINE),
+        }
+        # Sparse vectors must be configured at creation time (hybrid retrieval);
+        # mirror QdrantLocalStore._ensure_collection or the flag is silently lost.
+        if is_sparse_enabled():
+            from qdrant_client.models import Modifier, SparseVectorParams
+
+            create_kwargs["sparse_vectors_config"] = {
+                SPARSE_VECTOR_NAME: SparseVectorParams(modifier=Modifier.IDF)
+            }
+        client.create_collection(**create_kwargs)
+        logger.info(
+            "Created collection %s with dimension %s (sparse=%s)",
+            collection,
+            embed_dim,
+            is_sparse_enabled(),
         )
-        logger.info("Created collection %s with dimension %s", collection, embed_dim)
         return
     if existing != embed_dim:
         raise SystemExit(
@@ -486,7 +504,6 @@ def probe_embedder() -> tuple[Any, int, str]:
 def patch_embedder_keep_alive(embedder, keep_alive: str = "120m") -> None:
     if not hasattr(embedder, "_request_embed"):
         return
-    original = embedder._request_embed
 
     def _patched(client, batch):
         response = client.post(

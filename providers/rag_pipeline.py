@@ -18,9 +18,8 @@ from pathlib import Path
 
 import providers.query_orchestrator as _query_orchestrator  # patched below; avoids import cycle
 
-from providers.factory import get_llm, get_embedder, get_vector_store, get_reranker
+from providers.factory import get_fast_llm, get_llm
 from providers.semantic_cache import get_semantic_cache
-from providers.langfuse_logger import log_cache_hit
 from providers.searxng_search import web_search
 
 logger = logging.getLogger(__name__)
@@ -1067,9 +1066,27 @@ Answer using the sources above. If none contain enough information, say "I don't
 
 Answer:"""
 
-    return f"""You are an industrial vision systems expert assistant. Answer the question using the context below from vendor documentation and video transcripts.
+    # Only mention video transcripts when the packed context actually contains
+    # them — otherwise the model volunteers "no video transcripts were provided"
+    # disclaimers in ordinary answers.
+    has_video_context = any(
+        (chunk.get("content_type") or "") in ("video_transcript", "video_frame")
+        for chunk in chunks
+    )
+    if has_video_context:
+        return f"""You are an industrial vision systems expert assistant. Answer the question using the context below from vendor documentation and video transcripts.
 Excerpts marked with t=<seconds> are from video tutorials or demonstrations—summarize what those videos show and cite the video title and timestamp.
 When the question asks for a demo, tutorial, or video, answer from matching transcript excerpts when present; do not refuse merely because the user asked for a demonstration.
+If the answer is not in the context at all, say "I don't have enough information to answer that."
+
+Context:
+{local_context}
+
+{history_block}Question: {question}
+
+Answer:"""
+
+    return f"""You are an industrial vision systems expert assistant. Answer the question using the context below from vendor documentation.
 If the answer is not in the context at all, say "I don't have enough information to answer that."
 
 Context:
@@ -1470,7 +1487,8 @@ def _build_generation_plan(
         )
 
     if is_sufficiency_check_enabled():
-        sufficient = check_context_sufficient(retrieval_question, chunks, llm)
+        # YES/NO context check — use the cheaper fast tier, not the synthesis model.
+        sufficient = check_context_sufficient(retrieval_question, chunks, get_fast_llm())
         if sufficient is True:
             analytics.sufficiency_check_result = "YES"
             return _make_plan(citations)

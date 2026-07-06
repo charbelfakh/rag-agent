@@ -1,5 +1,4 @@
 """Sprint C unit tests: prompt headers, token packing, vendor filter."""
-import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -101,6 +100,14 @@ class TestChunkFormatting:
         )
         assert "video tutorials or demonstrations" in prompt
         assert "do not refuse merely because the user asked for a demonstration" in prompt
+
+    def test_build_prompt_omits_video_instructions_without_video_chunks(self):
+        """Text-only context must not mention transcripts — the model otherwise
+        volunteers 'no video transcripts were provided' disclaimers."""
+        prompt = build_prompt("What is Pekat?", [_chunk()])
+        assert "video transcripts" not in prompt
+        assert "video tutorials or demonstrations" not in prompt
+        assert "chunk body text" in prompt
 
 
 class TestTokenPacking:

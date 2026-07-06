@@ -1,8 +1,6 @@
 """Sprint B unit tests: dual vector_score / rerank_score preservation."""
-import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from providers.reranker import CrossEncoderReranker, NoOpReranker, _attach_rerank_scores
 

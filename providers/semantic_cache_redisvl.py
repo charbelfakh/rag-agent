@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 import uuid
 
 from providers.semantic_cache import CACHE_STATS_KEY, cosine_similarity
@@ -112,7 +111,6 @@ class RedisVLSemanticCacheBackend:
                 logger.debug("Cache trim delete failed for %s: %s", entry_id, exc)
 
     def lookup(self, vector: list[float]) -> tuple[str, float] | None:
-        t0 = time.perf_counter()
         try:
             query = self._VectorQuery(
                 vector=vector,

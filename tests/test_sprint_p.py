@@ -1,6 +1,5 @@
 """Sprint P tests: production sampling, sessions API, markdown citations."""
 import json
-from unittest.mock import MagicMock
 
 import pytest
 

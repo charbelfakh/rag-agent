@@ -15,7 +15,6 @@ from providers.rag_pipeline import (
     _resolve_generation_answer,
     estimate_prompt_tokens,
     format_history_block,
-    is_insufficient_answer,
     query as run_query,
     score_stats,
     stream_query,

@@ -1,7 +1,6 @@
 """Vision-language model via OpenAI-compatible multimodal chat API (Sprint N M3)."""
 from __future__ import annotations
 
-import json
 import os
 
 import httpx

@@ -1,7 +1,6 @@
 """Sprint D tests: LLM timing, cache counters, score floor."""
 from unittest.mock import MagicMock
 
-import pytest
 
 import providers.rag_pipeline as rag_pipeline
 from providers.rag_pipeline import (

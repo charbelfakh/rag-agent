@@ -52,6 +52,13 @@ def collapse_rolling_duplicates(lines: list[str]) -> list[str]:
     return collapsed
 
 
+def _line_covered_by(previous: str, current: str) -> bool:
+    """True when ``current`` adds nothing beyond ``previous`` (a rolling repeat)."""
+    if not previous or not current:
+        return False
+    return previous.casefold().startswith(current.casefold())
+
+
 @dataclass(frozen=True)
 class VttCue:
     start: float
@@ -84,16 +91,27 @@ def parse_vtt_cues(path: str) -> list[VttCue]:
     current_start: float | None = None
     current_end: float | None = None
     cue_lines: list[str] = []
+    prev_lines: list[str] = []
 
     def flush_cue() -> None:
-        nonlocal current_start, current_end, cue_lines
+        nonlocal current_start, current_end, cue_lines, prev_lines
         if current_start is None or current_end is None:
             cue_lines = []
             return
         merged = collapse_rolling_duplicates(
             [_normalize_cue_line(line) for line in cue_lines if line]
         )
-        text = re.sub(r"\s+", " ", " ".join(merged)).strip()
+        # YouTube auto-captions roll: each cue repeats the previous cue's
+        # line(s) before adding new text. Emit only lines the previous cue
+        # didn't already cover, so chunked transcripts don't stutter.
+        fresh = [
+            line
+            for line in merged
+            if not any(_line_covered_by(prev, line) for prev in prev_lines)
+        ]
+        if merged:
+            prev_lines = merged
+        text = re.sub(r"\s+", " ", " ".join(fresh)).strip()
         if text:
             cues.append(VttCue(start=current_start, end=current_end, text=text))
         current_start = None

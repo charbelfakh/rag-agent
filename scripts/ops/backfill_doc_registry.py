@@ -1,6 +1,5 @@
 """Backfill SQLite document registry from Qdrant. Run: ``python -m scripts.ops.backfill_doc_registry``."""
 import argparse
-import sys
 
 import scripts._bootstrap  # noqa: F401 — ``providers.*`` on direct script runs
 

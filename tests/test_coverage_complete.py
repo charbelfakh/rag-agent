@@ -1,17 +1,13 @@
 """Gap-filling tests for modules added in Sprints G–K (full coverage audit)."""
-import json
 import sys
 import types
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
 
 from conftest import patch_retrieval_pipeline
 from eval.llm_judge import grade_answer, parse_judge_response
 from providers import factory
-from providers.doc_registry import DocumentRegistry
 from providers.ingest_queue import is_ingest_queue_enabled, reset_ingest_queue
 from providers.metadata import (
     build_chunk_payload,

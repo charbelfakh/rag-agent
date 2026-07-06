@@ -247,6 +247,20 @@ langfuse-upstream/
 .cursor/
 .idea/
 .vscode/
+.vs/
+.claude/settings.local.json
+
+# Claude subscription OAuth tokens (already under data/, listed for clarity)
+data/claude_oauth_tokens.json
+
+# Persisted LLM provider selection (already under data/, listed for clarity)
+data/llm_provider.json
+
+# Locally-saved LLM provider API keys (already under data/, listed for clarity)
+data/llm_api_keys.json
+
+# Local eval artifacts (pre/post-migration reports, bake-off results)
+eval/reports/
 
 # Internal notes / agent context (local only)
 ARCHITECTURE.md

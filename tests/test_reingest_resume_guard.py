@@ -106,3 +106,49 @@ def test_source_has_text_points_false_when_collection_missing(fake_store):
     with patch.object(reingest_all, "_store_collection_exists", return_value=False):
         assert reingest_all._source_has_text_points(fake_store, "doc.pdf") is False
     fake_store.client.count.assert_not_called()
+
+
+class TestStateFilePath:
+    """REINGEST_STATE_PATH lets parallel per-vendor runs own separate state."""
+
+    def test_env_override_sets_state_file(self, monkeypatch, tmp_path):
+        import importlib
+
+        override = tmp_path / "reingest_state_lmi.json"
+        monkeypatch.setenv("REINGEST_STATE_PATH", str(override))
+        try:
+            importlib.reload(reingest_all)
+            assert reingest_all.STATE_FILE == override
+        finally:
+            monkeypatch.delenv("REINGEST_STATE_PATH", raising=False)
+            importlib.reload(reingest_all)
+
+    def test_default_state_file_under_data_dir(self, monkeypatch):
+        import importlib
+
+        monkeypatch.delenv("REINGEST_STATE_PATH", raising=False)
+        importlib.reload(reingest_all)
+        assert reingest_all.STATE_FILE.name == "reingest_state.json"
+
+
+class TestPreflightCollectionCreate:
+    """check_qdrant_collection must honor QDRANT_SPARSE_ENABLED at creation."""
+
+    def _create_kwargs(self, monkeypatch, sparse: str) -> dict:
+        monkeypatch.setenv("QDRANT_COLLECTION", "rag_docs_test")
+        monkeypatch.setenv("QDRANT_SPARSE_ENABLED", sparse)
+        client = MagicMock()
+        with (
+            patch.object(reingest_all, "_qdrant_client", return_value=client),
+            patch("providers.qdrant_store.collection_vector_size", return_value=None),
+        ):
+            reingest_all.check_qdrant_collection(1024)
+        return client.create_collection.call_args.kwargs
+
+    def test_sparse_enabled_creates_sparse_vectors_config(self, monkeypatch):
+        kwargs = self._create_kwargs(monkeypatch, "true")
+        assert "sparse_vectors_config" in kwargs
+
+    def test_sparse_disabled_creates_dense_only(self, monkeypatch):
+        kwargs = self._create_kwargs(monkeypatch, "false")
+        assert "sparse_vectors_config" not in kwargs

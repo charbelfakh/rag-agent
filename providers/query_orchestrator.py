@@ -12,7 +12,12 @@ from dataclasses import dataclass
 
 import re
 
-from providers.factory import get_embedder, get_llm, get_reranker, get_vector_store
+from providers.factory import (
+    get_embedder,
+    get_fast_llm,
+    get_reranker,
+    get_vector_store,
+)
 from providers.hybrid_retrieval import (
     is_hybrid_retrieval_enabled,
     merge_text_and_image_hits,
@@ -29,6 +34,7 @@ from providers.query_enhancements import (
     start_rerank_future,
 )
 from providers.semantic_cache import get_semantic_cache
+from providers.sparse_text import is_sparse_enabled
 
 DEFINITIONAL_PATTERN = re.compile(
     r"\b(what is|what are|what's|define|explain|describe|tell me about)\b",
@@ -50,6 +56,53 @@ def should_supplement_video_transcript_retrieval(question: str) -> bool:
     if not question.strip():
         return False
     return bool(_VIDEO_DEMO_INTENT.search(question) and _VIDEO_DEMO_TOPIC.search(question))
+
+
+def _store_supports_query_text(store) -> bool:
+    """True when the store's ``search`` accepts a ``query_text`` kwarg.
+
+    Keeps test fakes and third-party stores with the older signature working.
+    """
+    import inspect
+
+    try:
+        signature = inspect.signature(store.search)
+    except (TypeError, ValueError):
+        return False
+    params = signature.parameters
+    if "query_text" in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
+def _batched_dense_search(
+    store,
+    vector,
+    specs: list[tuple[str, dict | None, int]],
+) -> dict[str, list[dict]]:
+    """Run several plain-dense searches, sharing one Qdrant round-trip if possible.
+
+    ``specs`` is a list of ``(kind, filter_payload, top_k)``. Returns
+    ``{kind: hits}``. When the store exposes ``search_batch`` and more than one
+    search is needed, all searches go out in a single batched request (fewer
+    billed operations on a managed Qdrant); otherwise each runs as a normal
+    dense ``store.search`` — the results are identical either way.
+    """
+    if not specs:
+        return {}
+    # ``type(store)`` (not the instance) so a bare ``MagicMock`` store — which
+    # answers ``hasattr`` for any name — falls back to sequential ``search``.
+    if len(specs) > 1 and hasattr(type(store), "search_batch"):
+        requests = [
+            {"vector": vector, "top_k": top_k, "filter_payload": filt}
+            for (_kind, filt, top_k) in specs
+        ]
+        results = store.search_batch(requests)
+        return {kind: results[i] for i, (kind, _filt, _top_k) in enumerate(specs)}
+    return {
+        kind: store.search(vector, top_k=top_k, filter_payload=filt)
+        for (kind, filt, top_k) in specs
+    }
 
 
 def is_hyde_enabled() -> bool:
@@ -166,7 +219,9 @@ class QueryOrchestrator:
         embedder = get_embedder()
         # Eager singleton init: store may probe embed dimensions even on a cache hit.
         store = get_vector_store()
-        llm = get_llm()
+        # HyDE is a short pre-retrieval call — route it through the cheaper fast
+        # tier (Haiku on the anthropic provider; unchanged elsewhere).
+        llm = get_fast_llm()
         cache = get_semantic_cache()
         # History invalidates cache keys; vendor/product filters disable cache in rag_pipeline.
         use_cache = cache.enabled and ctx.history_turns == 0
@@ -240,6 +295,30 @@ class QueryOrchestrator:
         fetch_k = _retrieval_top_k(ctx.top_k)
         filter_payload = _search_filter(ctx.vendor_filter, ctx.document_type_filter)
         t_search = time.perf_counter()
+
+        want_video = should_supplement_video_transcript_retrieval(ctx.question)
+        want_image = is_hybrid_retrieval_enabled()
+        sparse_main = is_sparse_enabled() and _store_supports_query_text(store)
+        plain_dense_main = not is_map_reduce_enabled() and not sparse_main
+
+        # Collapse the plain-dense searches (main + optional video/image
+        # supplements) into a single Qdrant round-trip when the store supports
+        # it. The map-reduce and sparse-hybrid main paths run their own search
+        # (extra queries / lexical fusion), so only their supplements batch —
+        # results are identical to issuing the searches serially.
+        dense_specs: list[tuple[str, dict | None, int]] = []
+        if plain_dense_main:
+            dense_specs.append(("main", filter_payload, fetch_k))
+        if want_video:
+            video_filter = dict(filter_payload or {})
+            video_filter["content_type"] = "video_transcript"
+            dense_specs.append(("video", video_filter, min(fetch_k, 30)))
+        if want_image:
+            image_filter = dict(filter_payload or {})
+            image_filter["content_type"] = "image"
+            dense_specs.append(("image", image_filter, fetch_k))
+        dense_hits = _batched_dense_search(store, search_vector, dense_specs)
+
         if is_map_reduce_enabled():
             chunks = map_reduce_search(
                 ctx.question,
@@ -248,35 +327,28 @@ class QueryOrchestrator:
                 top_k=fetch_k,
                 filter_payload=filter_payload,
             )
-        else:
+        elif sparse_main:
+            # Enables lexical/hybrid retrieval; the raw question (not the HyDE
+            # text) is what should match exact terms like model numbers.
             chunks = store.search(
                 search_vector,
                 top_k=fetch_k,
                 filter_payload=filter_payload,
+                query_text=ctx.question,
             )
+        else:
+            chunks = dense_hits["main"]
         for hit in chunks:
             hit.setdefault("vector_score", float(hit.get("score", 0.0)))
-        if should_supplement_video_transcript_retrieval(ctx.question):
-            video_filter = dict(filter_payload or {})
-            video_filter["content_type"] = "video_transcript"
-            video_hits = store.search(
-                search_vector,
-                top_k=min(fetch_k, 30),
-                filter_payload=video_filter,
-            )
+        if want_video:
+            video_hits = dense_hits["video"]
             for hit in video_hits:
                 hit.setdefault("vector_score", float(hit.get("score", 0.0)))
             if video_hits:
                 chunks = reciprocal_rank_fusion(chunks, video_hits)[:fetch_k]
                 ctx.analytics.video_transcript_supplement = True
-        if is_hybrid_retrieval_enabled():
-            image_filter = dict(filter_payload or {})
-            image_filter["content_type"] = "image"
-            image_hits = store.search(
-                search_vector,
-                top_k=fetch_k,
-                filter_payload=image_filter,
-            )
+        if want_image:
+            image_hits = dense_hits["image"]
             chunks = merge_text_and_image_hits(chunks, image_hits, top_k=fetch_k)
         ctx.analytics.qdrant_search_ms = int((time.perf_counter() - t_search) * 1000)
         ctx.analytics.chunks_retrieved = len(chunks)

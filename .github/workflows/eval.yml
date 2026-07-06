@@ -6,6 +6,33 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Ruff (correctness rules — see ruff.toml)
+        run: |
+          pip install ruff
+          ruff check .
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: pip-audit (known CVEs in pinned/loose requirements)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --skip-editable
+        # Advisory only until requirements are fully pinned: a new upstream
+        # CVE should not block unrelated PRs.
+        continue-on-error: true
+
   unit-tests:
     runs-on: ubuntu-latest
     steps:
@@ -29,5 +56,13 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
-      - name: Check eval metrics vs baseline (offline)
-        run: python -m pytest tests/test_sprint_b_eval.py tests/test_sprint_i.py -q
+      - name: Check eval harness (offline — no live services)
+        run: |
+          python -m pytest \
+            tests/test_sprint_b_eval.py \
+            tests/test_sprint_i.py \
+            tests/test_eval_harness.py \
+            -q
+        # NOTE: The live recall gate (run_retrieval_eval.py --check-baseline)
+        # requires Qdrant + Ollama and must be run locally before merging any
+        # retrieval-path change. See tests/TESTING.md § "Pre-push recall gate".

@@ -64,6 +64,8 @@ from scripts.ingest.ingest import ingest
 
 
 
+from providers import claude_oauth
+from providers import factory as provider_factory
 from providers.doc_registry import get_doc_registry
 from providers.factory import get_embedder, get_vector_store
 from providers.ingest_jobs import get_ingest_job_store
@@ -123,6 +125,8 @@ async def verify_api_key(
 async def _startup() -> None:
     if API_KEY is None:
         logger.warning("API_KEY is not set — API authentication is disabled")
+    _apply_persisted_api_keys()
+    _apply_persisted_llm_provider()
     setup_otel()
     interrupted = get_ingest_job_store().mark_stale_ingesting_as_interrupted()
     if interrupted:
@@ -454,6 +458,55 @@ def embed_health():
         }
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _check_qdrant() -> tuple[bool, str]:
+    import httpx
+
+    base = os.getenv("QDRANT_LOCAL_URL", "http://localhost:6333")
+    try:
+        httpx.get(f"{base}/readyz", timeout=2.0).raise_for_status()
+        return True, base
+    except Exception as exc:
+        return False, f"{base} ({exc.__class__.__name__})"
+
+
+def _check_redis() -> tuple[bool, str]:
+    url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    try:
+        import redis
+
+        redis.Redis.from_url(url, socket_connect_timeout=2, socket_timeout=2).ping()
+        return True, url
+    except Exception as exc:
+        return False, f"{url} ({exc.__class__.__name__})"
+
+
+@app.get("/health/deps")
+def deps_health(response: Response):
+    """Per-dependency reachability so orchestrators can restart or alert.
+
+    503 when Qdrant is down (no retrieval without it); Redis and the LLM
+    only degrade the status — queries still work without cache, and hosted
+    LLM providers are not probed (cost/latency), only reported.
+    """
+    qdrant_ok, qdrant_detail = _check_qdrant()
+    redis_ok, redis_detail = _check_redis()
+    provider = os.getenv("LLM_PROVIDER", "ollama")
+    if provider == "ollama":
+        llm_ok, llm_detail, _ = _ollama_probe()
+    else:
+        llm_ok, llm_detail = True, f"{provider} (configured; not probed)"
+
+    status = "ok" if (qdrant_ok and redis_ok and llm_ok) else "degraded"
+    if not qdrant_ok:
+        response.status_code = 503
+    return {
+        "status": status,
+        "qdrant": {"ok": qdrant_ok, "detail": qdrant_detail},
+        "redis": {"ok": redis_ok, "detail": redis_detail},
+        "llm": {"ok": llm_ok, "provider": provider, "detail": llm_detail},
+    }
 
 
 class SessionCreateRequest(BaseModel):
@@ -893,6 +946,378 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
                 os.unlink(tmp_path)
             except OSError:
                 logger.warning("Failed to remove temp transcription file %s", tmp_path)
+
+
+# --- LLM provider selection (runtime, per-process) -------------------------
+
+LLM_PROVIDER_MODEL_ENV: dict[str, str] = {
+    "ollama": "OLLAMA_LLM_MODEL",
+    "claude_subscription": "CLAUDE_SUBSCRIPTION_MODEL",
+    "claude_cli": "CLAUDE_CLI_MODEL",  # legacy CLI-based path, not shown in UI
+    "anthropic": "ANTHROPIC_MODEL",
+    "openai": "OPENAI_MODEL",
+    "gemini": "GEMINI_MODEL",
+}
+
+
+LLM_API_KEY_ENVS: dict[str, tuple[str, ...]] = {
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+}
+
+_CLAUDE_MODEL_SUGGESTIONS = ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]
+
+_STATIC_MODEL_SUGGESTIONS: dict[str, list[str]] = {
+    "claude_subscription": _CLAUDE_MODEL_SUGGESTIONS,
+    "claude_cli": _CLAUDE_MODEL_SUGGESTIONS,
+    "anthropic": _CLAUDE_MODEL_SUGGESTIONS,
+    "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro"],
+}
+
+
+def _ollama_probe() -> tuple[bool, str, list[str]]:
+    """Reachability + installed model tags for the local Ollama server."""
+    import httpx
+
+    base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    try:
+        version = httpx.get(f"{base}/api/version", timeout=1.5).json().get("version", "?")
+        tags = httpx.get(f"{base}/api/tags", timeout=1.5).json().get("models") or []
+        models = [m.get("name", "") for m in tags if m.get("name")]
+        return True, f"Ollama {version} at {base}", models
+    except Exception as exc:
+        return False, f"Ollama not reachable at {base} ({exc.__class__.__name__})", []
+
+
+def _api_key_set(provider: str) -> bool:
+    return any(os.getenv(env) for env in LLM_API_KEY_ENVS.get(provider, ()))
+
+
+# --- Persisted provider selection ------------------------------------------
+# The runtime switch below sets LLM_PROVIDER in-process; on its own that resets
+# to the .env default on every restart, forcing the user to re-pick their
+# provider (e.g. Claude subscription) each run even though the credential is
+# already stored. We persist the last successful selection to a small JSON file
+# under data/ and restore it on startup, so a connection survives restarts.
+
+
+def _llm_pref_path() -> Path:
+    configured = os.getenv("LLM_PROVIDER_STATE_PATH", "").strip()
+    if configured:
+        return Path(configured)
+    return DATA_DIR / "llm_provider.json"
+
+
+def _load_llm_pref() -> dict | None:
+    try:
+        record = json.loads(_llm_pref_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _save_llm_pref(provider: str, model: str | None) -> None:
+    record: dict[str, str] = {"provider": provider}
+    if model:
+        record["model"] = model
+    path = _llm_pref_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record), encoding="utf-8")
+    except OSError:
+        logger.warning("Could not persist LLM provider preference to %s", path)
+
+
+def _clear_llm_pref() -> None:
+    try:
+        _llm_pref_path().unlink()
+    except OSError:
+        pass
+
+
+# --- Persisted API keys ----------------------------------------------------
+# LLM API keys (Claude/OpenAI/Gemini) can be entered in Settings and saved
+# locally so they survive restarts without living in .env. Stored provider ->
+# key in the per-user app-data dir (%APPDATA%\rag-agent or ~/.rag-agent, see
+# providers/app_paths.py); loaded into the environment on startup.
+
+
+def _llm_keys_path() -> Path:
+    configured = os.getenv("LLM_API_KEYS_PATH", "").strip()
+    if configured:
+        return Path(configured)
+    from providers.app_paths import secret_file
+
+    return secret_file("llm_api_keys.json", legacy_path=DATA_DIR / "llm_api_keys.json")
+
+
+def _load_api_keys() -> dict:
+    try:
+        record = json.loads(_llm_keys_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def _save_api_key(provider: str, key: str) -> None:
+    keys = _load_api_keys()
+    keys[provider] = key
+    path = _llm_keys_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(keys), encoding="utf-8")
+        try:  # best-effort owner-only perms on POSIX (no-op on Windows)
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except OSError:
+        logger.warning("Could not persist LLM API key to %s", path)
+
+
+def _apply_persisted_api_keys() -> None:
+    """Load locally-saved API keys into the environment at startup so the
+    matching providers work without the key being present in .env. A key already
+    set in the environment (e.g. from .env) wins and is left untouched."""
+    keys = _load_api_keys()
+    for provider, key in keys.items():
+        if not key:
+            continue
+        envs = LLM_API_KEY_ENVS.get(str(provider).strip().lower())
+        if envs and not any(os.getenv(env) for env in envs):
+            os.environ[envs[0]] = str(key)
+
+
+def _apply_persisted_llm_provider() -> None:
+    """Restore the last-selected provider at startup so a stored subscription /
+    API-key connection is used automatically without reconnecting each run.
+
+    A credential-backed provider is only restored when its credential is still
+    present, so a stale preference can never wedge the app into a provider that
+    would fail on every query.
+    """
+    pref = _load_llm_pref()
+    if not pref:
+        return
+    provider = str(pref.get("provider", "")).strip().lower()
+    if provider not in LLM_PROVIDER_MODEL_ENV:
+        return
+    if provider == "claude_subscription" and not claude_oauth.is_signed_in():
+        logger.info("Persisted provider %s not restored: not signed in", provider)
+        return
+    if provider in LLM_API_KEY_ENVS and not _api_key_set(provider):
+        logger.info("Persisted provider %s not restored: no API key set", provider)
+        return
+
+    os.environ["LLM_PROVIDER"] = provider
+    model = str(pref.get("model", "")).strip()
+    if model:
+        os.environ[LLM_PROVIDER_MODEL_ENV[provider]] = model
+    provider_factory.reset_providers()
+    logger.info("Restored persisted LLM provider: %s", provider)
+
+
+def _llm_status_payload() -> dict:
+    provider = os.getenv("LLM_PROVIDER", "ollama")
+    model_env = LLM_PROVIDER_MODEL_ENV.get(provider)
+
+    ollama_ok, ollama_detail, ollama_models = _ollama_probe()
+    signed_in = claude_oauth.is_signed_in()
+    claude_detail = (
+        "Signed in — answers use your Claude subscription"
+        if signed_in
+        else "Not signed in — click Connect to sign in with your subscription"
+    )
+
+    providers: dict[str, dict] = {
+        "ollama": {
+            "connected": ollama_ok,
+            "detail": ollama_detail,
+            "models": ollama_models,
+            "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        },
+        "claude_subscription": {
+            "connected": signed_in,
+            "detail": claude_detail,
+            "signed_in": signed_in,
+            "models": _STATIC_MODEL_SUGGESTIONS["claude_subscription"],
+        },
+    }
+    for api_provider in ("anthropic", "openai", "gemini"):
+        key_set = _api_key_set(api_provider)
+        providers[api_provider] = {
+            "connected": key_set,
+            "detail": (
+                "API key configured (verified on first query)"
+                if key_set
+                else "No API key set — add it to .env"
+            ),
+            "api_key_set": key_set,
+            "models": _STATIC_MODEL_SUGGESTIONS[api_provider],
+        }
+
+    active = providers.get(provider, {})
+    return {
+        "provider": provider,
+        "model": os.getenv(model_env, "") if model_env else "",
+        "providers": providers,
+        "connection": {
+            "connected": bool(active.get("connected")),
+            "detail": active.get("detail", ""),
+        },
+        "note": "Selection is remembered across restarts; .env LLM_PROVIDER is the initial default.",
+    }
+
+
+@app.get("/llm/status", dependencies=[Depends(verify_api_key)])
+def llm_status_endpoint():
+    return _llm_status_payload()
+
+
+class LLMProviderRequest(BaseModel):
+    provider: str
+    model: str | None = None
+    api_key: str | None = None
+
+
+@app.post("/llm/provider", dependencies=[Depends(verify_api_key)])
+def set_llm_provider_endpoint(req: LLMProviderRequest):
+    provider = req.provider.strip().lower()
+    if provider not in LLM_PROVIDER_MODEL_ENV:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider {provider!r}. "
+            f"Choose one of: {', '.join(sorted(LLM_PROVIDER_MODEL_ENV))}",
+        )
+
+    previous_provider = os.getenv("LLM_PROVIDER", "ollama")
+    model_env = LLM_PROVIDER_MODEL_ENV[provider]
+    previous_model = os.getenv(model_env)
+
+    # A freshly-entered API key is applied to the environment so eager
+    # construction below validates against it; the previous value is captured
+    # for rollback on failure.
+    key_env = LLM_API_KEY_ENVS.get(provider, ())[:1]
+    new_key = (req.api_key or "").strip()
+    previous_key = os.getenv(key_env[0]) if key_env else None
+    if key_env and new_key:
+        os.environ[key_env[0]] = new_key
+
+    # API-key providers need a key (the constructor only checks it on the first
+    # request), so reject up front rather than "connecting" into a broken state.
+    if provider in LLM_API_KEY_ENVS and not _api_key_set(provider):
+        raise HTTPException(
+            status_code=400,
+            detail=f"An API key is required for {provider}. Enter it in Settings.",
+        )
+
+    os.environ["LLM_PROVIDER"] = provider
+    if req.model and req.model.strip():
+        os.environ[model_env] = req.model.strip()
+    provider_factory.reset_providers()
+    try:
+        # Construct eagerly so misconfiguration (e.g. claude CLI missing)
+        # fails here instead of on the next user query.
+        provider_factory.get_llm()
+    except Exception as exc:
+        os.environ["LLM_PROVIDER"] = previous_provider
+        if previous_model is None:
+            os.environ.pop(model_env, None)
+        else:
+            os.environ[model_env] = previous_model
+        if key_env and new_key:
+            if previous_key is None:
+                os.environ.pop(key_env[0], None)
+            else:
+                os.environ[key_env[0]] = previous_key
+        provider_factory.reset_providers()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Persist the key locally so it survives restarts (no re-entry needed).
+    if key_env and new_key:
+        _save_api_key(provider, new_key)
+
+    # Persist so the selection is restored on the next restart (no reconnect).
+    _save_llm_pref(provider, os.getenv(model_env))
+    logger.info("LLM provider switched: %s -> %s", previous_provider, provider)
+    return _llm_status_payload()
+
+
+class LLMDisconnectRequest(BaseModel):
+    provider: str
+
+
+@app.post("/llm/disconnect", dependencies=[Depends(verify_api_key)])
+def llm_disconnect_endpoint(req: LLMDisconnectRequest):
+    """Forget the credential for a provider (Forgestation-style disconnect)."""
+    provider = req.provider.strip().lower()
+    if provider not in LLM_PROVIDER_MODEL_ENV:
+        raise HTTPException(status_code=400, detail=f"Unknown provider {provider!r}")
+
+    was_active = os.getenv("LLM_PROVIDER", "ollama") == provider
+
+    if provider == "ollama":
+        detail = "Local provider — nothing to disconnect."
+    elif provider == "claude_subscription":
+        # ForgeStation-style: disconnect only deactivates the model. The stored
+        # subscription token is kept so reconnecting needs no re-sign-in.
+        if claude_oauth.is_signed_in():
+            detail = "Disconnected — your Claude subscription stays saved; reconnect anytime without signing in again."
+        else:
+            detail = "Already disconnected."
+    elif provider == "claude_cli":
+        path = claude_oauth.credentials_path()
+        if path.is_file():
+            backup = path.with_name(path.name + ".bak")
+            backup.unlink(missing_ok=True)
+            path.replace(backup)
+            detail = (
+                "Signed out — this also signs the claude CLI out everywhere "
+                "(credentials kept in .credentials.json.bak)."
+            )
+        else:
+            detail = "Already signed out."
+    else:
+        # ForgeStation-style: keep the saved API key so reconnect is one click.
+        detail = "Disconnected — your saved API key is kept; reconnect anytime."
+
+    # Deactivate the model too: if the disconnected provider was the active one,
+    # fall back to the local default so the app isn't left pointing at a provider
+    # whose credential we just removed (queries would otherwise error).
+    if was_active and provider != "ollama":
+        os.environ["LLM_PROVIDER"] = "ollama"
+
+    # Drop the saved selection so a disconnected provider is not auto-restored
+    # on the next restart.
+    pref = _load_llm_pref()
+    if pref and str(pref.get("provider", "")).strip().lower() == provider:
+        _clear_llm_pref()
+
+    provider_factory.reset_providers()
+    return {**_llm_status_payload(), "disconnect_detail": detail}
+
+
+@app.post("/llm/claude/oauth/start", dependencies=[Depends(verify_api_key)])
+def claude_oauth_start_endpoint():
+    """Begin the in-browser Claude subscription sign-in; returns the authorize URL."""
+    if claude_oauth.is_signed_in():
+        return {"signed_in": True}
+    return {"signed_in": False, **claude_oauth.start_login()}
+
+
+class ClaudeOAuthFinishRequest(BaseModel):
+    code: str
+
+
+@app.post("/llm/claude/oauth/finish", dependencies=[Depends(verify_api_key)])
+def claude_oauth_finish_endpoint(req: ClaudeOAuthFinishRequest):
+    """Exchange the pasted authorization code and store CLI credentials."""
+    try:
+        result = claude_oauth.finish_login(req.code)
+    except claude_oauth.ClaudeOAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
 
 
 @app.post("/upload", dependencies=[Depends(verify_api_key)])

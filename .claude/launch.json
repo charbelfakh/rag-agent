@@ -1,0 +1,8 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "frontend", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "frontend", "run", "dev"], "port": 5173, "autoPort": false },
+    { "name": "api", "runtimeExecutable": ".venv\\Scripts\\python.exe", "runtimeArgs": ["-m", "uvicorn", "api.main:app", "--port", "8010"], "port": 8010, "autoPort": false },
+    { "name": "ui-static", "runtimeExecutable": "python", "runtimeArgs": ["-m", "http.server", "8099", "--directory", "ui"], "port": 8099, "autoPort": false }
+  ]
+}

@@ -17,6 +17,9 @@ GLOSSARY_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bmeck\s*mind\b", re.IGNORECASE), "Mech-Mind"),
     (re.compile(r"\bmechmind\b", re.IGNORECASE), "Mech-Mind"),
     (re.compile(r"\bmech\s*mind\b", re.IGNORECASE), "Mech-Mind"),
+    # Observed in YouTube auto-captions ("Mech-Mind: Giving Robots a Mind")
+    (re.compile(r"\bhomoids\b", re.IGNORECASE), "humanoids"),
+    (re.compile(r"\bcuttingedge\b", re.IGNORECASE), "cutting-edge"),
 )
 
 

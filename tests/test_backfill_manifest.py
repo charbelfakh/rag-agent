@@ -6,9 +6,8 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 sys.modules.pop("scripts.ingest.ingest", None)
 sys.modules.pop("ingest", None)

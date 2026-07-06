@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 import time
 
 # Replaces broken ``parent.parent`` ROOT hack after scripts/ reorganisation.

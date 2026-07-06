@@ -2,13 +2,57 @@
 
 A local-first **Retrieval-Augmented Generation (RAG)** assistant for industrial vision-systems documentation (Pekat, Mechmind, Zivid, LMI, and others). Ingest PDFs and HTML help articles into Qdrant, query them through a streaming chat UI, and optionally fall back to web search when local context is insufficient.
 
+> **What this project demonstrates:** an end-to-end, production-shaped RAG system — not a notebook. Pluggable model/vector backends behind a provider factory, two API surfaces (REST + SSE and GraphQL + WebSocket subscriptions), a measurable retrieval pipeline (HyDE, cross-encoder rerank, semantic cache, web fallback), an offline eval harness with CI, and full observability — all backed by an automated test suite.
+
+## Demo
+
+[![Vision Systems RAG Assistant — click to play the demo](demo-poster.png)](rag-linkedin-demo.mp4)
+
+A ~70-second local walkthrough ([download the MP4](rag-linkedin-demo.mp4)): grounded multimodal answers with cited screenshots, a product-video citation **playing inline**, live model switching across local Ollama models, and an **Ollama → Claude-subscription** provider switch — all running on-device.
+
+## At a glance
+
+| | |
+|---|---|
+| **Corpus indexed** | **59,762 chunks** — 46.4K text · 11.6K VLM image-captions · 1.7K product-video transcripts — across real vendor manuals, help-center HTML, and product videos (Pekat, LMI/Gocator, Mech-Mind, Zivid) in Qdrant |
+| **Retrieval quality** | **recall@5 ≈ 0.93, MRR ≈ 0.80** on a 45-question golden set (text + image-caption) spanning all 4 vendors (see [Retrieval quality](#retrieval-quality)) |
+| **Automated tests** | **527 passing** (`pytest`, +1 skipped), plus ruff lint + an offline retrieval/answer eval suite wired into CI |
+| **Latency (local, 9B model)** | ~10 s end-to-end cold query (HyDE + 9B generation) · **~2.3 s on semantic-cache hit** · retrieve ≈ 20 ms · cross-encoder rerank ≈ 1.1 s (`RERANKER_FETCH_K=60`) |
+| **Interfaces** | FastAPI + SSE streaming chat UI · GraphQL API with live `askStream` WebSocket subscription + React/Vite SPA |
+| **Swappable backends** | LLM: Ollama / OpenAI / Anthropic / vLLM / VLM · Embed: Ollama / TEI / local GPU · Vectors: Qdrant local / sharded / cloud |
+| **Retrieval techniques** | query condensation, HyDE, parallel orchestration, cross-encoder reranking, semantic cache, hybrid image retrieval, SearXNG web fallback |
+| **Observability** | Langfuse v3 per-query traces · optional OpenTelemetry spans · production sampling for eval |
+
+### Retrieval quality
+
+Measured with the offline harness (`eval/run_retrieval_eval.py`) against **`eval/dataset.jsonl`** — 45 ground-truth questions (25 text + 20 image-caption) authored from real indexed chunks, each labelled with the exact source document(s) that contain the answer, spanning all four vendors (LMI/Gocator, Mech-Mind, Zivid, Pekat). Recall uses exact source-document matching. Shipping config: **dense + HyDE, `RERANKER_FETCH_K=60`** (sparse hybrid built but deferred — see caveats).
+
+| Metric | Baseline (`eval/baseline.json`) |
+|---|---|
+| **recall@5** | **0.933** (42/45) |
+| **recall@10** | 0.933 — every hit lands in the top 5 |
+| **MRR** | **0.800** |
+| image-caption recall@5 | 0.400 (multimodal is harder; reported separately) |
+| mean top vector score | ≈ 0.74 |
+| latency breakdown | embed ≈ 1.8 s (Ollama HyDE, the bottleneck) · Qdrant search ≈ 20 ms · cross-encoder rerank ≈ 1.1 s (`fetch_k=60`) |
+
+This baseline is committed to `eval/baseline.json` so CI's `--check-baseline` flags genuine regressions without false alarms.
+
+**Honest caveats:**
+- **Run-to-run variance is real.** HyDE generates a hypothetical document with the LLM before embedding, which is non-deterministic, so recall@5 swings by ±1–2 questions across runs.
+- **The golden set is small (45 Q).** A credible, representative sample — not a statistically large benchmark. Building it surfaced a useful finding: several "misses" were actually correct retrievals from a *different* file (the same answer appears across manual variants), which is why some questions accept multiple valid source documents.
+- **Multimodal recall is lower by nature.** The 20 image-caption questions (VLM-captioned screenshots) retrieve their source document at ≈ 0.40 recall@5 — reported separately rather than folded into the headline.
+- **Sparse hybrid is built but off.** A dense+sparse RRF path exists (`QDRANT_SPARSE_ENABLED`), but on this golden set it held recall@5 while *hurting* MRR (HyDE already closes the lexical gap it targets), so it ships disabled pending a better sparse text function — see [`REINGEST.md`](REINGEST.md).
+
 ## Features
 
 - **Chat UI** — Dark-theme SPA with SSE streaming, conversation history, stop control, thumbs up/down feedback, optional dev analytics, and a documents panel (upload, ingest progress, delete).
+- **GraphQL + React stack** — Standalone Strawberry GraphQL API (`graphql_app/`) exposing an `ask` query and an `askStream` **WebSocket subscription** for live token streaming, with a typed React + Vite + Apollo SPA (`frontend/`). Runs alongside the REST/SSE app, sharing the same retrieval pipeline via `rag_interface.py`.
 - **Vendor/product scoping** — Toolbar dropdowns populated from `GET /vendors`; keyword inference from the question when filters are unset; explicit filters always win.
 - **RAG pipeline** — Query condensation for follow-ups, HyDE, parallel `QueryOrchestrator`, cross-encoder reranking, semantic cache, sufficiency check, and SearXNG web fallback.
 - **Ingest v2** — PDF + HTML (URL list or single URL), schema v2 Qdrant payloads, ingest manifest, collision-proof filenames, pending caption/video sidecars.
-- **Provider abstraction** — Ollama (default LLM + embed), local GPU or TEI embeddings, OpenAI-compatible chat endpoints (`vllm` / `tgi` / `openai_compatible`), optional VLM; Qdrant local, sharded, or cloud.
+- **Provider abstraction** — Ollama (default LLM + embed), Claude / OpenAI / Gemini API keys, Claude subscription sign-in, local GPU or TEI embeddings, OpenAI-compatible chat endpoints (`vllm` / `tgi` / `openai_compatible`), optional VLM; Qdrant local, sharded, or cloud.
+- **Cost optimization** (paid Claude path) — **model tiering** (Haiku for short HyDE/sufficiency calls, Sonnet for synthesis via `get_fast_llm()`), **prompt-cache-ready** system blocks, an offline **Batch API** path for eval/bulk at 50% cost, and **fewer billed Qdrant ops** (batched dense searches, cache-first, batched upserts). The default local Ollama path is unaffected.
 - **Ops tooling** — `python -m scripts.ingest.reingest_all` (full-corpus re-ingest), `python -m scripts.ingest.extract_pdf_images` + `python -m scripts.ingest.caption_worker` (PDF/HTML image caption pipeline), `python -m scripts.ops.audit`, `python -m scripts.ops.cleanup`, eval suite with CI baseline checks.
 - **Observability** — Langfuse v3 per-query analytics; optional OpenTelemetry spans.
 
@@ -37,8 +81,8 @@ A local-first **Retrieval-Augmented Generation (RAG)** assistant for industrial 
 
 1. **Optional condensation** — When chat history is non-empty, the LLM rewrites the follow-up into a standalone retrieval query (original question still goes to the generation prompt).
 2. **Retrieval scope** — Explicit `vendor` / `product` from the UI or API; else single-vendor keyword detection on the (condensed) question; multiple vendor keywords → no filter (comparison queries). Zero filtered hits → unfiltered fallback (logged).
-3. **Retrieval** — `QueryOrchestrator`: embed question (parallel with HyDE when enabled), semantic cache lookup (skipped when history or filters are active), Qdrant search with payload filters, optional hybrid image retrieval, rerank.
-4. **Generation** — Sufficiency check and/or early web fallback; assemble prompt with history + chunk headers; stream LLM tokens; retry with web if answer is insufficient.
+3. **Retrieval** — `QueryOrchestrator`: embed question (parallel with HyDE when enabled; HyDE runs on the cheaper fast tier), semantic cache lookup (skipped when history or filters are active), Qdrant search with payload filters (main + supplemental searches share one batched round-trip), optional hybrid image retrieval, rerank.
+4. **Generation** — Sufficiency check (fast tier) and/or early web fallback; assemble prompt with history + chunk headers; stream LLM tokens; retry with web if answer is insufficient.
 
 ### Ingest path
 
@@ -59,9 +103,10 @@ PDF / HTML / TXT  →  read/split (producer thread)  →  chunk queue
 | Module | Role |
 |--------|------|
 | `providers/rag_pipeline.py` | RAG orchestration, condensation, filters, prompt assembly, SSE events |
-| `providers/query_orchestrator.py` | Parallel embed / HyDE / cache / search / rerank |
+| `providers/query_orchestrator.py` | Parallel embed / HyDE (fast tier) / cache / batched search / rerank |
 | `scripts/ingest/ingest.py` | v2 ingest pipeline, manifest, HTML loader |
-| `providers/factory.py` | Provider singletons (LLM, embed, store, cache, reranker) |
+| `providers/factory.py` | Provider singletons (`get_llm`, `get_fast_llm`, embed, store, cache, reranker) |
+| `providers/anthropic_batch.py` | Offline Anthropic Batch API (bulk/eval at 50% cost) |
 | `providers/metadata.py` | Vendor inference, chunk IDs, upload metadata |
 | `scripts/ops/audit.py` | Read-only Qdrant coverage vs manifest (`python -m scripts.ops.audit`) |
 | `scripts/ops/cleanup.py` | Delete or retag sources by `payload.source` (`python -m scripts.ops.cleanup`) |
@@ -165,7 +210,8 @@ Copy `.env.example` to `.env`. Common variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_PROVIDER` | `ollama`, `vllm`, `openai_compatible`, `tgi`, `vlm` | `ollama` |
+| `LLM_PROVIDER` | `ollama`, `anthropic`, `openai`, `gemini`, `claude_subscription`, `vllm`, `openai_compatible`, `tgi`, `vlm` | `ollama` |
+| `LLM_FAST_MODEL` | Cheap "fast tier" for HyDE/sufficiency (`anthropic` only; else main model) | `claude-haiku-4-5` |
 | `EMBED_PROVIDER` | `ollama`, `gpu`, `tei` | `ollama` |
 | `VECTOR_STORE` | `qdrant_local`, `qdrant_cloud` | `qdrant_local` |
 | `QDRANT_COLLECTION` | Collection name | `rag_docs` |
@@ -293,6 +339,7 @@ python eval/run_retrieval_eval.py
 python eval/run_retrieval_eval.py --write-baseline
 python eval/run_retrieval_eval.py --check-baseline
 python eval/run_answer_eval.py
+python eval/run_answer_eval.py --batch   # grade the whole set in one Anthropic Batch API job (50% cost)
 
 # Caption ablation (text-only vs full corpus)
 python eval/run_retrieval_eval.py --dataset eval/dataset_caption.jsonl --content-type-filter text
@@ -308,7 +355,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -q
 ```
 
-**339 tests** across sprints A–Q, API endpoints, ingest v2, caption worker, and coverage audit. Requires `pytest-asyncio` (included in `requirements-dev.txt`). Policy: new modules, env knobs, and API routes need tests in the same change ([tests/TESTING.md](tests/TESTING.md)).
+**528 tests** across sprints A–Q, the cost-optimization increment, API endpoints, ingest v2, caption worker, and coverage audit. Requires `pytest-asyncio` (included in `requirements-dev.txt`). Policy: new modules, env knobs, and API routes need tests in the same change ([tests/TESTING.md](tests/TESTING.md)).
 
 ## Roadmap
 
@@ -317,6 +364,7 @@ python -m pytest tests/ -q
 | Area | Capability |
 |------|------------|
 | **Core RAG** | HyDE, reranker, semantic cache, web fallback, sufficiency check, early web fallback |
+| **Cost** | LLM model tiering (Haiku HyDE/sufficiency), cached system blocks, offline Batch API (50%), batched Qdrant searches |
 | **Query UX** | Multi-turn history, query condensation, vendor/product filters + keyword inference |
 | **Ingest** | Schema v2, HTML/URL ingest, Confluence `.ak-renderer-document` extraction, manifest, upload metadata, incremental skip |
 | **Scale** | Parallel orchestrator, ingest queue + workers, blob externalization, vendor sharding |
@@ -364,6 +412,10 @@ QDRANT_VENDOR_SHARDING=true
 
 # Cache
 SEMANTIC_CACHE_BACKEND=redisvl
+
+# Cost (paid Claude path)
+LLM_FAST_MODEL=claude-haiku-4-5      # HyDE/sufficiency tier on LLM_PROVIDER=anthropic
+LLM_FAST_MAX_TOKENS=512
 
 # Infra
 OTEL_ENABLED=true

@@ -1,19 +1,9 @@
 export interface Source {
   source: string
+  file_name?: string | null
   vendor?: string | null
   page?: number | null
+  section?: string | null
   content_type?: string | null
-}
-
-export interface AskResult {
-  answer: string
-  sources: Source[]
-}
-
-export interface AskQueryData {
-  ask: AskResult
-}
-
-export interface AskQueryVariables {
-  question: string
+  text?: string | null
 }

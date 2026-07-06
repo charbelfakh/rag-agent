@@ -2,7 +2,7 @@
 import sys
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,6 +30,53 @@ class TestHealthEndpoints:
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
+
+    def test_health_deps_all_up(self, client, monkeypatch):
+        monkeypatch.setattr("api.main._check_qdrant", lambda: (True, "http://localhost:6333"))
+        monkeypatch.setattr("api.main._check_redis", lambda: (True, "redis://localhost:6379"))
+        monkeypatch.setattr("api.main._ollama_probe", lambda: (True, "Ollama 0.9", ["mistral"]))
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+
+        response = client.get("/health/deps")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["qdrant"]["ok"] is True
+        assert body["llm"]["provider"] == "ollama"
+
+    def test_health_deps_qdrant_down_is_503(self, client, monkeypatch):
+        monkeypatch.setattr("api.main._check_qdrant", lambda: (False, "unreachable"))
+        monkeypatch.setattr("api.main._check_redis", lambda: (True, "redis://localhost:6379"))
+        monkeypatch.setattr("api.main._ollama_probe", lambda: (True, "Ollama 0.9", []))
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+
+        response = client.get("/health/deps")
+        assert response.status_code == 503
+        assert response.json()["status"] == "degraded"
+
+    def test_health_deps_redis_down_degrades_but_200(self, client, monkeypatch):
+        monkeypatch.setattr("api.main._check_qdrant", lambda: (True, "http://localhost:6333"))
+        monkeypatch.setattr("api.main._check_redis", lambda: (False, "unreachable"))
+        monkeypatch.setattr("api.main._ollama_probe", lambda: (True, "Ollama 0.9", []))
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+
+        response = client.get("/health/deps")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "degraded"
+        assert body["redis"]["ok"] is False
+
+    def test_health_deps_hosted_llm_not_probed(self, client, monkeypatch):
+        monkeypatch.setattr("api.main._check_qdrant", lambda: (True, "http://localhost:6333"))
+        monkeypatch.setattr("api.main._check_redis", lambda: (True, "redis://localhost:6379"))
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+
+        response = client.get("/health/deps")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["llm"]["provider"] == "anthropic"
+        assert "not probed" in body["llm"]["detail"]
 
 
 class TestUiEndpoints:
@@ -385,3 +432,355 @@ class TestTranscribeEndpoint:
         )
         assert response.status_code == 400
         assert "Could not transcribe" in response.json()["detail"]
+
+
+class TestLlmProviderEndpoints:
+    @pytest.fixture(autouse=True)
+    def _pin_provider_env(self, monkeypatch, tmp_path):
+        """Register LLM env keys with monkeypatch so endpoint mutations are undone,
+        stub the Ollama probe, and isolate the OAuth token store (no live state)."""
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("OLLAMA_LLM_MODEL", "mistral:7b-instruct-q4_K_M")
+        monkeypatch.setenv("CLAUDE_SUBSCRIPTION_MODEL", "")
+        monkeypatch.setenv("CLAUDE_OAUTH_TOKENS_PATH", str(tmp_path / "tokens.json"))
+        monkeypatch.setenv("LLM_PROVIDER_STATE_PATH", str(tmp_path / "llm_provider.json"))
+        monkeypatch.setenv("LLM_API_KEYS_PATH", str(tmp_path / "llm_api_keys.json"))
+        monkeypatch.setattr(
+            "api.main._ollama_probe",
+            lambda: (True, "Ollama test at http://localhost:11434", ["mistral:7b"]),
+        )
+        yield
+        from providers.factory import reset_providers
+
+        reset_providers()
+
+    def test_llm_status_reports_provider_connection_and_models(self, client, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        response = client.get("/llm/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["provider"] == "ollama"
+        assert data["model"] == "mistral:7b-instruct-q4_K_M"
+        assert data["connection"] == {
+            "connected": True,
+            "detail": "Ollama test at http://localhost:11434",
+        }
+        assert data["providers"]["ollama"]["models"] == ["mistral:7b"]
+        anthropic = data["providers"]["anthropic"]
+        assert anthropic["api_key_set"] is False
+        assert anthropic["connected"] is False
+        assert anthropic["models"]
+        claude = data["providers"]["claude_subscription"]
+        assert claude["signed_in"] is False
+        assert claude["connected"] is False
+        assert "Not signed in" in claude["detail"]
+        assert claude["models"]
+
+    def test_llm_status_disconnected_when_ollama_down(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "api.main._ollama_probe", lambda: (False, "Ollama not reachable", [])
+        )
+        data = client.get("/llm/status").json()
+        assert data["connection"]["connected"] is False
+        assert "not reachable" in data["connection"]["detail"]
+
+    def test_disconnect_claude_subscription_keeps_tokens(self, client):
+        from providers import claude_oauth
+
+        claude_oauth._store_tokens({"access_token": "tok", "expires_in": 3600})
+        assert claude_oauth.is_signed_in() is True
+
+        response = client.post(
+            "/llm/disconnect", json={"provider": "claude_subscription"}
+        )
+
+        assert response.status_code == 200
+        # ForgeStation-style: token retained so reconnect needs no re-sign-in.
+        assert claude_oauth.is_signed_in() is True
+        assert "reconnect" in response.json()["disconnect_detail"].lower()
+
+    def test_disconnect_active_provider_reverts_to_ollama(self, client, monkeypatch):
+        import os
+        from providers import claude_oauth
+
+        # Subscription is signed in AND the active provider.
+        claude_oauth._store_tokens({"access_token": "tok", "expires_in": 3600})
+        monkeypatch.setenv("LLM_PROVIDER", "claude_subscription")
+
+        response = client.post(
+            "/llm/disconnect", json={"provider": "claude_subscription"}
+        )
+
+        assert response.status_code == 200
+        # Model is deactivated (falls back to local) but the token is retained.
+        assert os.environ["LLM_PROVIDER"] == "ollama"
+        assert response.json()["provider"] == "ollama"
+        assert claude_oauth.is_signed_in() is True
+
+    def test_disconnect_inactive_provider_keeps_active(self, client, monkeypatch):
+        import os
+
+        # Active provider is ollama; disconnecting a different one must not move it.
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+        response = client.post("/llm/disconnect", json={"provider": "openai"})
+
+        assert response.status_code == 200
+        assert os.environ["LLM_PROVIDER"] == "ollama"
+
+    def test_disconnect_claude_cli_moves_credentials(self, client, monkeypatch, tmp_path):
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+        creds = tmp_path / ".credentials.json"
+        creds.write_text('{"claudeAiOauth": {"accessToken": "tok"}}', encoding="utf-8")
+
+        response = client.post("/llm/disconnect", json={"provider": "claude_cli"})
+
+        assert response.status_code == 200
+        assert not creds.exists()
+        assert (tmp_path / ".credentials.json.bak").exists()
+        assert "Signed out" in response.json()["disconnect_detail"]
+
+    def test_disconnect_api_provider_keeps_saved_key(self, client, monkeypatch):
+        import os
+
+        # ForgeStation-style: the saved key is retained across a disconnect.
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        response = client.post("/llm/disconnect", json={"provider": "openai"})
+        assert response.status_code == 200
+        assert os.environ["OPENAI_API_KEY"] == "sk-test"
+        assert "reconnect" in response.json()["disconnect_detail"].lower()
+
+    def test_disconnect_unknown_provider_rejected(self, client):
+        response = client.post("/llm/disconnect", json={"provider": "skynet"})
+        assert response.status_code == 400
+
+    def test_switch_provider_updates_env_and_resets_factory(self, client, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        reset = MagicMock()
+        fake_llm = MagicMock()
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", reset)
+        monkeypatch.setattr("api.main.provider_factory.get_llm", MagicMock(return_value=fake_llm))
+
+        response = client.post(
+            "/llm/provider", json={"provider": "openai", "model": "gpt-4o-mini"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["provider"] == "openai"
+        import os
+
+        assert os.environ["LLM_PROVIDER"] == "openai"
+        assert os.environ["OPENAI_MODEL"] == "gpt-4o-mini"
+        reset.assert_called_once()
+
+    def test_switch_unknown_provider_rejected(self, client):
+        response = client.post("/llm/provider", json={"provider": "skynet"})
+        assert response.status_code == 400
+        assert "Unknown provider" in response.json()["detail"]
+
+    def test_failed_switch_reverts_previous_provider(self, client, monkeypatch):
+        import os
+
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+        monkeypatch.setattr(
+            "api.main.provider_factory.get_llm",
+            MagicMock(side_effect=RuntimeError("claude CLI not found")),
+        )
+
+        response = client.post("/llm/provider", json={"provider": "claude_cli"})
+
+        assert response.status_code == 400
+        assert "claude CLI not found" in response.json()["detail"]
+        assert os.environ["LLM_PROVIDER"] == "ollama"
+
+    def test_switch_provider_persists_preference(self, client, monkeypatch):
+        import json
+        import api.main as api_main
+
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+        monkeypatch.setattr(
+            "api.main.provider_factory.get_llm", MagicMock(return_value=MagicMock())
+        )
+
+        response = client.post(
+            "/llm/provider", json={"provider": "openai", "model": "gpt-4o"}
+        )
+
+        assert response.status_code == 200
+        saved = json.loads(api_main._llm_pref_path().read_text(encoding="utf-8"))
+        assert saved == {"provider": "openai", "model": "gpt-4o"}
+
+    def test_disconnect_clears_persisted_preference(self, client):
+        import api.main as api_main
+
+        api_main._save_llm_pref("openai", "gpt-4o")
+        assert api_main._llm_pref_path().exists()
+
+        response = client.post("/llm/disconnect", json={"provider": "openai"})
+
+        assert response.status_code == 200
+        assert not api_main._llm_pref_path().exists()
+
+    def test_persisted_subscription_restored_on_startup(self, monkeypatch):
+        import os
+        import api.main as api_main
+        from providers import claude_oauth
+
+        claude_oauth._store_tokens({"access_token": "tok", "expires_in": 3600})
+        api_main._save_llm_pref("claude_subscription", "claude-opus-4-8")
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+
+        api_main._apply_persisted_llm_provider()
+
+        assert os.environ["LLM_PROVIDER"] == "claude_subscription"
+        assert os.environ["CLAUDE_SUBSCRIPTION_MODEL"] == "claude-opus-4-8"
+
+    def test_persisted_subscription_skipped_when_not_signed_in(self, monkeypatch):
+        import os
+        import api.main as api_main
+
+        # Isolated token store is empty -> not signed in, so it must not restore.
+        api_main._save_llm_pref("claude_subscription", "claude-opus-4-8")
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+
+        api_main._apply_persisted_llm_provider()
+
+        assert os.environ["LLM_PROVIDER"] == "ollama"
+
+    def test_persisted_api_provider_skipped_without_key(self, monkeypatch):
+        import os
+        import api.main as api_main
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        api_main._save_llm_pref("openai", "gpt-4o")
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+
+        api_main._apply_persisted_llm_provider()
+
+        assert os.environ["LLM_PROVIDER"] == "ollama"
+
+    def test_switch_provider_persists_api_key(self, client, monkeypatch):
+        import os
+        import api.main as api_main
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+        monkeypatch.setattr(
+            "api.main.provider_factory.get_llm", MagicMock(return_value=MagicMock())
+        )
+
+        response = client.post(
+            "/llm/provider",
+            json={"provider": "openai", "model": "gpt-4o", "api_key": "sk-live"},
+        )
+
+        assert response.status_code == 200
+        # Applied to the environment now, and persisted for next run.
+        assert os.environ["OPENAI_API_KEY"] == "sk-live"
+        assert api_main._load_api_keys()["openai"] == "sk-live"
+        # The key itself is never echoed back to the client.
+        assert "sk-live" not in response.text
+
+    def test_switch_provider_reverts_api_key_on_failure(self, client, monkeypatch):
+        import os
+        import api.main as api_main
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+        monkeypatch.setattr(
+            "api.main.provider_factory.get_llm",
+            MagicMock(side_effect=RuntimeError("bad key")),
+        )
+
+        response = client.post(
+            "/llm/provider", json={"provider": "openai", "api_key": "sk-bad"}
+        )
+
+        assert response.status_code == 400
+        assert "OPENAI_API_KEY" not in os.environ
+        assert "openai" not in api_main._load_api_keys()
+
+    def test_switch_api_provider_without_key_rejected(self, client, monkeypatch):
+        import os
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("api.main.provider_factory.reset_providers", MagicMock())
+
+        response = client.post("/llm/provider", json={"provider": "openai"})
+
+        assert response.status_code == 400
+        assert "API key is required" in response.json()["detail"]
+        # The active provider is left untouched.
+        assert os.environ["LLM_PROVIDER"] == "ollama"
+
+    def test_persisted_api_keys_loaded_on_startup(self, monkeypatch):
+        import os
+        import api.main as api_main
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        api_main._save_api_key("openai", "sk-saved")
+
+        api_main._apply_persisted_api_keys()
+
+        assert os.environ["OPENAI_API_KEY"] == "sk-saved"
+
+    def test_status_reports_saved_key_as_connected(self, client, monkeypatch):
+        import api.main as api_main
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        api_main._save_api_key("openai", "sk-saved")
+        api_main._apply_persisted_api_keys()
+
+        data = client.get("/llm/status").json()
+        assert data["providers"]["openai"]["api_key_set"] is True
+
+    def test_oauth_start_short_circuits_when_signed_in(self, client, monkeypatch):
+        monkeypatch.setattr("api.main.claude_oauth.is_signed_in", lambda: True)
+        response = client.post("/llm/claude/oauth/start")
+        assert response.status_code == 200
+        assert response.json() == {"signed_in": True}
+
+    def test_oauth_start_returns_authorize_url(self, client):
+        from providers import claude_oauth as oauth_module
+
+        try:
+            response = client.post("/llm/claude/oauth/start")
+        finally:
+            oauth_module.reset_pending()
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["signed_in"] is False
+        assert data["url"].startswith("https://claude.ai/oauth/authorize?")
+        assert "code_challenge=" in data["url"]
+
+    def test_oauth_finish_returns_result(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "api.main.claude_oauth.finish_login",
+            lambda code: {"signed_in": True, "subscription_type": "max"},
+        )
+        response = client.post("/llm/claude/oauth/finish", json={"code": "abc#state"})
+        assert response.status_code == 200
+        assert response.json() == {"signed_in": True, "subscription_type": "max"}
+
+    def test_oauth_finish_maps_flow_errors_to_400(self, client, monkeypatch):
+        from providers.claude_oauth import ClaudeOAuthError
+
+        def _raise(code):
+            raise ClaudeOAuthError("State mismatch — restart the sign-in and try again.")
+
+        monkeypatch.setattr("api.main.claude_oauth.finish_login", _raise)
+        response = client.post("/llm/claude/oauth/finish", json={"code": "bad"})
+        assert response.status_code == 400
+        assert "State mismatch" in response.json()["detail"]
+
+    def test_ui_contains_llm_provider_controls(self, client):
+        response = client.get("/")
+        assert 'id="llmProviderSelect"' in response.text
+        assert 'id="llmConnectBtn"' in response.text
+        # Model selection lives in the chat window, not Settings.
+        assert 'id="chatModelSelect"' in response.text
+        assert 'id="llmOauthCodeInput"' in response.text
+        assert 'id="llmOauthFinishBtn"' in response.text

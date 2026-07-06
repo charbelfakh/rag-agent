@@ -1,6 +1,5 @@
 """Sprint A unit tests: embed reuse, sufficiency dedup, cache SSE batching."""
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

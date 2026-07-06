@@ -37,6 +37,24 @@ def parse_judge_response(text: str) -> dict:
     }
 
 
+def build_judge_prompt(
+    *,
+    question: str,
+    answer: str,
+    expected_sources: list[str] | None = None,
+) -> str:
+    """Render the judge prompt for one (question, answer) pair.
+
+    Shared by the per-item :func:`grade_answer` and the offline Batch API path so
+    the grading instructions never drift between them.
+    """
+    return JUDGE_PROMPT.format(
+        question=question,
+        answer=answer,
+        expected_sources=", ".join(expected_sources or []) or "(none listed)",
+    )
+
+
 def grade_answer(
     llm,
     *,
@@ -44,10 +62,8 @@ def grade_answer(
     answer: str,
     expected_sources: list[str] | None = None,
 ) -> dict:
-    prompt = JUDGE_PROMPT.format(
-        question=question,
-        answer=answer,
-        expected_sources=", ".join(expected_sources or []) or "(none listed)",
+    prompt = build_judge_prompt(
+        question=question, answer=answer, expected_sources=expected_sources
     )
     raw = llm.generate(prompt)
     result = parse_judge_response(raw)

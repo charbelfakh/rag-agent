@@ -8,16 +8,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 
 import scripts._bootstrap  # noqa: F401 — ``providers.*`` on direct script runs
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
-    FieldCondition,
-    Filter,
-    MatchValue,
     PayloadSchemaType,
     PointStruct,
     VectorParams,

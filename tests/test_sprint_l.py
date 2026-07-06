@@ -1,13 +1,12 @@
 """Sprint L tests: M0 media store, reranker A/B, section chunking."""
 import json
-from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from providers.media_store import MediaStore, normalize_media_uri, reset_media_store
+from providers.media_store import MediaStore, reset_media_store
 from providers.metadata import build_image_chunk_payload, resolve_metadata
-from providers.reranker import CrossEncoderReranker, truncate_for_rerank
+from providers.reranker import CrossEncoderReranker
 from providers.section_chunking import (
     is_section_aware_chunking_enabled,
     split_procedure_steps,

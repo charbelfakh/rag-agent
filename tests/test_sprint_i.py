@@ -1,8 +1,6 @@
 """Sprint I tests: RedisVL cache, v2 migration, Langfuse experiments."""
 import json
 import sys
-import types
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,7 +8,6 @@ import pytest
 from providers.semantic_cache import (
     LegacySemanticCacheBackend,
     SemanticCache,
-    cosine_similarity,
     reset_semantic_cache,
 )
 

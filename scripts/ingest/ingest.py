@@ -36,6 +36,7 @@ from providers.caption_images import (
 )
 from providers.factory import get_embedder, get_vector_store
 from providers.metadata import DocumentMetadata, make_chunk_id
+from providers.transcript_glossary import normalize_transcript_text
 from providers.vtt_transcript import (
     build_video_transcript_metadata,
     discover_vtt_files,
@@ -951,6 +952,38 @@ def _produce_pdf_chunks(
     index_state: _ChunkIndexState,
     counter: _ChunkCounter | None = None,
 ) -> None:
+    from providers.markdown_ingest import is_markdown_ingest_enabled
+
+    if is_markdown_ingest_enabled():
+        try:
+            from providers.markdown_ingest import pdf_markdown_sections
+
+            md_sections = pdf_markdown_sections(file_path)
+        except ImportError as exc:
+            logger.warning(
+                "MARKDOWN_INGEST_ENABLED but pymupdf4llm unavailable (%s); "
+                "falling back to legacy PDF extraction",
+                exc,
+            )
+        else:
+            for heading, body, page_num in tqdm(
+                md_sections,
+                desc="Read/split (md)",
+                unit="section",
+                position=0,
+                leave=True,
+            ):
+                _chunks_from_section(
+                    heading or None,
+                    body,
+                    page_num,
+                    splitter,
+                    chunk_queue,
+                    index_state,
+                    counter,
+                )
+            return
+
     with fitz.open(file_path) as pdf:
         sections = _build_pdf_sections(pdf)
         if not sections:
@@ -1000,7 +1033,15 @@ def _produce_html_chunks(
 
     raw = Path(file_path).read_text(encoding="utf-8", errors="replace")
     soup = BeautifulSoup(raw, "lxml")
-    sections = _build_html_sections(soup)
+
+    from providers.markdown_ingest import is_markdown_ingest_enabled
+
+    if is_markdown_ingest_enabled():
+        from providers.markdown_ingest import html_markdown_sections
+
+        sections = html_markdown_sections(raw)
+    else:
+        sections = _build_html_sections(soup)
 
     for heading, body in tqdm(
         sections,
@@ -1657,7 +1698,17 @@ def ingest_video_transcripts(
                 logger.warning("Skipping %s: no cues after VTT parse", vtt_path.name)
                 counts["skipped"] += 1
                 continue
-            transcript = parse_vtt(str(vtt_path))
+            # Fix observed ASR mistranscriptions (same glossary as the
+            # Whisper path) before windowing and hashing.
+            cues = [
+                type(cue)(
+                    start=cue.start,
+                    end=cue.end,
+                    text=normalize_transcript_text(cue.text),
+                )
+                for cue in cues
+            ]
+            transcript = normalize_transcript_text(parse_vtt(str(vtt_path)))
             if not transcript.strip():
                 logger.warning("Skipping %s: empty transcript after VTT parse", vtt_path.name)
                 counts["skipped"] += 1
@@ -1762,6 +1813,15 @@ def _ingest_pdf_images(
 
 
 def _cli_main(argv: list[str] | None = None) -> int:
+    # Force UTF-8 stdio: on Windows the default cp1252 console codec raises
+    # UnicodeEncodeError on CJK/full-width characters (e.g. Mech-Mind video
+    # titles), which would abort ingest of those sources on a status print.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     parser = argparse.ArgumentParser(description="Ingest a document into Qdrant (schema v2)")
     parser.add_argument(
         "file_path",

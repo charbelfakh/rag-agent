@@ -3,7 +3,6 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-import pytest
 
 from providers.metadata import build_chunk_payload, resolve_metadata
 

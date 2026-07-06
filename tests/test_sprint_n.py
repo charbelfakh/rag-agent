@@ -3,7 +3,6 @@ import json
 from unittest.mock import MagicMock
 
 import httpx
-import pytest
 
 from providers.colpali_embed import ColPaliEmbedder
 from providers.vlm_llm import VLMLLM

@@ -1,0 +1,12 @@
+# Lint gate: correctness rules only (syntax errors + pyflakes). Style rules can
+# be layered in later; keep CI green on what actually breaks at runtime.
+extend-exclude = [
+    "langfuse-upstream",
+    "frontend",
+]
+
+[lint]
+select = [
+    "E9",  # syntax / io errors
+    "F",   # pyflakes: undefined names, unused imports/variables, f-strings
+]

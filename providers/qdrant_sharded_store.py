@@ -69,9 +69,21 @@ class VendorShardedQdrantStore(QdrantLocalStore):
             finally:
                 self.collection = previous
 
-    def search(self, vector, top_k: int = 5, filter_payload: dict | None = None) -> list[dict]:
+    def search(
+        self,
+        vector,
+        top_k: int = 5,
+        filter_payload: dict | None = None,
+        *,
+        query_text: str | None = None,
+    ) -> list[dict]:
+        # Forward query_text only when set, keeping the parent call shape
+        # unchanged for the default dense-only path.
+        extra = {"query_text": query_text} if query_text is not None else {}
         if not is_vendor_sharding_enabled():
-            return super().search(vector, top_k=top_k, filter_payload=filter_payload)
+            return super().search(
+                vector, top_k=top_k, filter_payload=filter_payload, **extra
+            )
 
         vendor = (filter_payload or {}).get("vendor")
         if vendor:
@@ -79,7 +91,9 @@ class VendorShardedQdrantStore(QdrantLocalStore):
             self.collection = self._shard_collection(vendor)
             try:
                 self._ensure_collection()
-                return super().search(vector, top_k=top_k, filter_payload=filter_payload)
+                return super().search(
+                    vector, top_k=top_k, filter_payload=filter_payload, **extra
+                )
             finally:
                 self.collection = previous
 
@@ -88,7 +102,9 @@ class VendorShardedQdrantStore(QdrantLocalStore):
             previous = self.collection
             self.collection = collection
             try:
-                hits = super().search(vector, top_k=top_k, filter_payload=filter_payload)
+                hits = super().search(
+                    vector, top_k=top_k, filter_payload=filter_payload, **extra
+                )
                 merged.extend(hits)
             except Exception as exc:
                 logger.debug("Shard search %s skipped: %s", collection, exc)
@@ -97,6 +113,22 @@ class VendorShardedQdrantStore(QdrantLocalStore):
 
         merged.sort(key=lambda row: float(row.get("score", 0.0)), reverse=True)
         return merged[:top_k]
+
+    def search_batch(self, requests: list[dict]) -> list[list[dict]]:
+        # Single-collection batch is only valid when not sharding; with sharding
+        # each request must be shard-routed, so fall back to sequential ``search``
+        # (correctness over the round-trip saving) — the shard fan-out already
+        # dominates the request count there.
+        if not is_vendor_sharding_enabled():
+            return super().search_batch(requests)
+        return [
+            self.search(
+                req["vector"],
+                top_k=req.get("top_k", 5),
+                filter_payload=req.get("filter_payload"),
+            )
+            for req in requests
+        ]
 
     def delete_by_source(self, source: str) -> int:
         if not is_vendor_sharding_enabled():

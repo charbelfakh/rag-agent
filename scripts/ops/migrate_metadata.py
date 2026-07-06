@@ -6,7 +6,7 @@ Run: ``python -m scripts.ops.migrate_metadata`` (``--dry-run`` supported).
 from __future__ import annotations
 
 import argparse
-import sys
+from pathlib import Path
 
 import scripts._bootstrap  # noqa: F401 — ``providers.*`` on direct script runs
 

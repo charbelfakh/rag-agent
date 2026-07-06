@@ -1,10 +1,8 @@
 """Sprint M tests: PDF image extract, SigLIP embed, hybrid RRF fusion."""
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from providers.hybrid_retrieval import merge_text_and_image_hits, reciprocal_rank_fusion
-from providers.pdf_images import ExtractedImage, extract_pdf_images
+from providers.pdf_images import extract_pdf_images
 from providers.siglip_embed import SigLIPEmbedder
 
 

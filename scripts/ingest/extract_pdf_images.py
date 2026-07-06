@@ -18,7 +18,7 @@ import pymupdf as fitz
 
 import scripts._bootstrap  # noqa: F401 — ``providers.*`` on direct script runs
 
-from providers.caption_images import is_skipped_caption_entry, prepare_caption_queue_entries
+from providers.caption_images import prepare_caption_queue_entries
 
 MIN_DIMENSION = 150
 MIN_AREA = 40_000
@@ -218,7 +218,7 @@ def extract_pdf_images(
         if found is False:
             print(f"Warning: {source} not found in Qdrant for vendor {vendor}", file=sys.stderr)
         elif found is None:
-            print(f"Note: Qdrant source check skipped (unavailable)", file=sys.stderr)
+            print("Note: Qdrant source check skipped (unavailable)", file=sys.stderr)
 
     counts: Counter[str] = Counter()
     queue_entries: list[dict] = []

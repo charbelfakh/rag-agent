@@ -37,7 +37,14 @@ class VectorStore(ABC):
         vector: list[float],
         top_k: int = 5,
         filter_payload: dict | None = None,
+        *,
+        query_text: str | None = None,
     ) -> list[dict]:
+        """Vector similarity search.
+
+        ``query_text`` is the raw query string; implementations that support
+        lexical/hybrid retrieval may use it, others ignore it.
+        """
         ...
 
     @abstractmethod

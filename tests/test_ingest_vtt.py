@@ -72,6 +72,49 @@ def test_parse_vtt_strips_timestamps_tags_and_collapses_duplicates():
     assert text.count("Hello world") == 1
 
 
+ROLLING_VTT = """WEBVTT
+
+00:00:00.480 --> 00:00:03.110 align:start position:0%
+At MechMind, we put a mind into
+
+00:00:03.110 --> 00:00:03.120 align:start position:0%
+At MechMind, we put a mind into
+
+
+00:00:03.120 --> 00:00:05.230 align:start position:0%
+At MechMind, we put a mind into
+machines, enabling them to see,
+
+00:00:05.230 --> 00:00:05.240 align:start position:0%
+machines, enabling them to see,
+
+
+00:00:05.240 --> 00:00:07.150 align:start position:0%
+machines, enabling them to see,
+understand, reason, and act.
+"""
+
+
+def test_parse_vtt_cues_drops_rolling_repeats_across_cues():
+    """YouTube auto-captions repeat each line across 2-3 cues; naive cue
+    concatenation stutters ('At MechMind, we put a mind into At MechMind, …')."""
+    cues = parse_vtt_cues_from_string(ROLLING_VTT)
+    joined = " ".join(cue.text for cue in cues)
+    assert joined.count("At MechMind, we put a mind into") == 1
+    assert joined.count("machines, enabling them to see,") == 1
+    assert joined.count("understand, reason, and act.") == 1
+
+
+def test_group_vtt_cues_chunks_have_no_rolling_repeats():
+    cues = parse_vtt_cues_from_string(ROLLING_VTT)
+    windows = group_vtt_cues_into_chunks(cues, max_chars=1500, overlap_chars=150)
+    assert len(windows) == 1
+    assert windows[0].text == (
+        "At MechMind, we put a mind into machines, enabling them to see, "
+        "understand, reason, and act."
+    )
+
+
 def test_parse_vtt_cues_preserves_start_seconds():
     cues = parse_vtt_cues_from_string(SAMPLE_VTT)
     assert len(cues) >= 2
@@ -291,6 +334,63 @@ def test_ingest_video_transcripts_reingest_updates_manifest_in_place(
     assert list(second.keys()) == [title]
     assert second[title]["chunk_count"] == 3
     assert second[title]["ingested_at"] >= first_ingested_at
+
+
+def test_glossary_fixes_new_observed_asr_errors():
+    from providers.transcript_glossary import normalize_transcript_text
+
+    fixed = normalize_transcript_text(
+        "With cuttingedge embodied AI, from dual armed systems in homoids."
+    )
+    assert "cutting-edge" in fixed
+    assert "humanoids" in fixed
+    assert "homoids" not in fixed
+
+
+def test_ingest_video_transcripts_applies_glossary(tmp_path, isolated_manifest):
+    """VTT ingest must run the same ASR-glossary pass as the Whisper path."""
+    video_dir = tmp_path / "transcripts"
+    video_dir.mkdir()
+    vtt = video_dir / "abc123.en.vtt"
+    vtt.write_text(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n"
+        "mac mine uses cuttingedge AI for homoids.\n",
+        encoding="utf-8",
+    )
+    info = {
+        "id": "abc123",
+        "title": "Mech-Mind Overview",
+        "webpage_url": "https://www.youtube.com/watch?v=abc123",
+        "channel_id": "UC_MM",
+        "upload_date": "20250101",
+        "language": "en",
+        "automatic_captions": {"en": [{"ext": "vtt"}]},
+    }
+    (video_dir / "abc123.info.json").write_text(json.dumps(info), encoding="utf-8")
+
+    fake_store = MagicMock()
+    fake_store.collection = "rag_docs"
+    fake_store.client.count.return_value = MagicMock(count=0)
+    fake_embedder = MagicMock()
+    fake_embedder.embed.return_value = [[0.1, 0.2]]
+
+    with (
+        patch.object(sys.modules[_INGEST_MODULE], "get_vector_store", return_value=fake_store),
+        patch.object(sys.modules[_INGEST_MODULE], "get_embedder", return_value=fake_embedder),
+        patch("scripts.ingest.ingest.tqdm.write"),
+        patch("scripts.ingest.ingest.tqdm", side_effect=lambda *args, **kwargs: MagicMock()),
+    ):
+        counts = sys.modules[_INGEST_MODULE].ingest_video_transcripts(
+            str(video_dir), vendor="mechmind"
+        )
+
+    assert counts["ingested"] >= 1
+    payloads = fake_store.upsert.call_args[0][2]
+    text = payloads[0]["text"]
+    assert "Mech-Mind" in text
+    assert "cutting-edge" in text
+    assert "humanoids" in text
+    assert "homoids" not in text
 
 
 def test_find_info_json_for_bracketed_vtt_filename(tmp_path):

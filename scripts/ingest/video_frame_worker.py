@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

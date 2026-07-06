@@ -2,7 +2,6 @@
 from concurrent.futures import Future
 from unittest.mock import MagicMock
 
-import pytest
 
 from providers.query_enhancements import (
     dynamic_rerank_top_n,

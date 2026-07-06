@@ -13,6 +13,12 @@ from qdrant_client.models import (
     VectorParams,
 )
 from providers.base import VectorStore
+from providers.hybrid_retrieval import reciprocal_rank_fusion
+from providers.sparse_text import (
+    SPARSE_VECTOR_NAME,
+    is_sparse_enabled,
+    sparse_text_vector,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +69,7 @@ class QdrantLocalStore(VectorStore):
         if grpc_port:
             client_kwargs["grpc_port"] = int(grpc_port)
         self.client = QdrantClient(**client_kwargs)
+        self._sparse_search_ok = True
         self._ensure_collection()
         self._ensure_payload_indexes()
 
@@ -99,10 +106,17 @@ class QdrantLocalStore(VectorStore):
 
     def _ensure_collection(self):
         if self.collection not in self._collection_names():
-            self.client.create_collection(
-                collection_name=self.collection,
-                vectors_config=self._vector_params(),
-            )
+            create_kwargs: dict = {
+                "collection_name": self.collection,
+                "vectors_config": self._vector_params(),
+            }
+            if is_sparse_enabled():
+                from qdrant_client.models import Modifier, SparseVectorParams
+
+                create_kwargs["sparse_vectors_config"] = {
+                    SPARSE_VECTOR_NAME: SparseVectorParams(modifier=Modifier.IDF)
+                }
+            self.client.create_collection(**create_kwargs)
 
     def _ensure_payload_indexes(self) -> None:
         for field in PAYLOAD_INDEX_FIELDS:
@@ -165,11 +179,24 @@ class QdrantLocalStore(VectorStore):
         from providers.blob_store import get_blob_store
 
         blob = get_blob_store()
-        stored_payloads = [blob.externalize_payload_text(dict(p)) for p in payloads]
-        points = [
-            PointStruct(id=i, vector=v, payload=p)
-            for i, v, p in zip(ids, vectors, stored_payloads)
-        ]
+        sparse = is_sparse_enabled()
+        points = []
+        for point_id, dense, payload in zip(ids, vectors, payloads):
+            # Sparse vector from the full text, before blob externalization slims it.
+            vector = dense
+            if sparse:
+                from qdrant_client.models import SparseVector
+
+                indices, values = sparse_text_vector(
+                    payload.get("text_full") or payload.get("text") or ""
+                )
+                vector = {"": dense}
+                if indices:
+                    vector[SPARSE_VECTOR_NAME] = SparseVector(
+                        indices=indices, values=values
+                    )
+            stored = blob.externalize_payload_text(dict(payload))
+            points.append(PointStruct(id=point_id, vector=vector, payload=stored))
         self.client.upsert(collection_name=self.collection, points=points)
 
     def search(
@@ -180,6 +207,7 @@ class QdrantLocalStore(VectorStore):
         *,
         vendor: str | None = None,
         product: str | None = None,
+        query_text: str | None = None,
     ) -> list[dict]:
         payload = dict(filter_payload or {})
         if vendor:
@@ -187,12 +215,106 @@ class QdrantLocalStore(VectorStore):
         if product:
             payload["product"] = product.strip().lower()
         query_filter = self._build_filter(payload or None)
+
+        dense_hits = self._query_hydrated(vector, top_k, query_filter)
+        if not (is_sparse_enabled() and query_text and self._sparse_search_ok):
+            return dense_hits
+
+        # Hybrid: fuse dense cosine ranking with a lexical sparse ranking.
+        # ``vector_score`` keeps the dense cosine so downstream thresholds
+        # (early-web fallback, analytics) retain their semantics.
+        for hit in dense_hits:
+            hit["vector_score"] = float(hit.get("score", 0.0))
+        sparse_hits = self._sparse_search(query_text, top_k, query_filter)
+        if not sparse_hits:
+            return dense_hits
+        # Dense list last: RRF scores are order-independent, but for chunks in
+        # both lists the fused row keeps the later list's copy — the dense one,
+        # which carries ``vector_score``.
+        fused = reciprocal_rank_fusion(sparse_hits, dense_hits)[:top_k]
+        floor = min(
+            (h["vector_score"] for h in dense_hits), default=0.0
+        )
+        for row in fused:
+            # Sparse-only hits have no cosine; backfill with the lowest dense
+            # cosine retrieved so they don't trip low-score fallbacks.
+            row.setdefault("vector_score", floor)
+        return fused
+
+    def _query_hydrated(self, query, top_k: int, query_filter) -> list[dict]:
         results = self.client.query_points(
             collection_name=self.collection,
-            query=vector,
+            query=query,
             limit=top_k,
             query_filter=query_filter,
         )
+        return self._hydrate_points(results.points)
+
+    @staticmethod
+    def _hydrate_points(points) -> list[dict]:
+        """Turn raw Qdrant points into chunk dicts (text_full + blob hydrated)."""
+        from providers.blob_store import get_blob_store
+
+        blob = get_blob_store()
+        hydrated = []
+        for hit in points:
+            payload = dict(hit.payload or {})
+            if payload.get("text_full"):
+                payload["text"] = payload["text_full"]
+            payload = blob.hydrate_payload(payload)
+            hydrated.append({**payload, "score": hit.score})
+        return hydrated
+
+    def search_batch(self, requests: list[dict]) -> list[list[dict]]:
+        """Run several dense searches in one Qdrant round-trip.
+
+        ``requests`` is a list of ``{"vector", "top_k", "filter_payload"}`` dicts.
+        Returns one hydrated hit list per request, in the same order. This is the
+        plain-dense path (no sparse fusion); the retrieval orchestrator uses it to
+        collapse the main + supplemental searches into a single billed request and
+        applies any RRF/merge fusion itself.
+        """
+        if not requests:
+            return []
+        from qdrant_client.models import QueryRequest
+
+        query_requests = [
+            QueryRequest(
+                query=req["vector"],
+                limit=req.get("top_k", 5),
+                filter=self._build_filter(dict(req.get("filter_payload") or {}) or None),
+                with_payload=True,
+            )
+            for req in requests
+        ]
+        responses = self.client.query_batch_points(
+            collection_name=self.collection,
+            requests=query_requests,
+        )
+        return [self._hydrate_points(resp.points) for resp in responses]
+
+    def _sparse_search(self, query_text: str, top_k: int, query_filter) -> list[dict]:
+        indices, values = sparse_text_vector(query_text)
+        if not indices:
+            return []
+        try:
+            from qdrant_client.models import SparseVector
+
+            results = self.client.query_points(
+                collection_name=self.collection,
+                query=SparseVector(indices=indices, values=values),
+                using=SPARSE_VECTOR_NAME,
+                limit=top_k,
+                query_filter=query_filter,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Sparse search unavailable (%s); falling back to dense-only. "
+                "Was the collection created with QDRANT_SPARSE_ENABLED=true?",
+                exc,
+            )
+            self._sparse_search_ok = False
+            return []
         from providers.blob_store import get_blob_store
 
         blob = get_blob_store()
@@ -202,7 +324,7 @@ class QdrantLocalStore(VectorStore):
             if payload.get("text_full"):
                 payload["text"] = payload["text_full"]
             payload = blob.hydrate_payload(payload)
-            hydrated.append({**payload, "score": hit.score})
+            hydrated.append({**payload, "score": hit.score, "sparse_score": hit.score})
         return hydrated
 
     def delete_by_source(self, source: str) -> int:

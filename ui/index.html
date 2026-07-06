@@ -18,6 +18,71 @@
       --assistant: #2a2a30;
       --error: #f87171;
       --accent: #a78bfa;
+      --focus-border: #4c3b8f;
+      --pulse-border: #3b4f6b;
+    }
+
+    html[data-theme="light"] {
+      --bg: #ffffff;
+      --sidebar: #f4f4f6;
+      --surface: #ffffff;
+      --surface-2: #ececef;
+      --border: #dcdce2;
+      --text: #1c1c22;
+      --text-muted: #63636e;
+      --user: #7c3aed;
+      --user-hover: #6d28d9;
+      --assistant: #f3f3f6;
+      --error: #dc2626;
+      --accent: #6d28d9;
+      --focus-border: #a78bfa;
+      --pulse-border: #93c5fd;
+    }
+
+    /* Light-theme overrides for rules that hard-code dark colors */
+    html[data-theme="light"] .new-chat-btn:hover { border-color: #cdcdd6; }
+    html[data-theme="light"] .md-code {
+      background: #f0f0f4;
+      border: 1px solid var(--border);
+    }
+    html[data-theme="light"] .documents-add-btn {
+      color: #1d4ed8;
+      border-color: #bcd3f7;
+      background: #eef4ff;
+    }
+    html[data-theme="light"] .documents-add-btn:hover:not(:disabled) {
+      background: #e0ebfd;
+      color: #1e40af;
+    }
+    html[data-theme="light"] .documents-dropzone:hover,
+    html[data-theme="light"] .documents-dropzone.dragover {
+      background: rgba(59, 130, 246, 0.08);
+    }
+    html[data-theme="light"] .document-delete-btn {
+      border-color: #f3c2c2;
+      background: #fdeded;
+      color: #dc2626;
+    }
+    html[data-theme="light"] .document-delete-btn:hover:not(:disabled) {
+      background: #fbdcdc;
+    }
+    html[data-theme="light"] .documents-status.success { color: #15803d; }
+    html[data-theme="light"] .ingest-progress-card.done {
+      border-color: #b7e4c7;
+      background: #eef8f1;
+    }
+    html[data-theme="light"] .ingest-progress-card.error {
+      border-color: #f3c2c2;
+      background: #fdf0f0;
+    }
+    html[data-theme="light"] .stop-btn {
+      background: #fdeaea;
+      color: #b91c1c;
+      border-color: #f3c2c2;
+    }
+    html[data-theme="light"] .stop-btn:hover {
+      background: #fbdada;
+      color: #991b1b;
     }
 
     * {
@@ -141,7 +206,7 @@
     }
 
     .search-input:focus {
-      border-color: #4c3b8f;
+      border-color: var(--focus-border);
     }
 
     .history-list {
@@ -215,7 +280,7 @@
 
     @keyframes ingest-pulse {
       0%, 100% { border-color: var(--border); }
-      50% { border-color: #3b4f6b; }
+      50% { border-color: var(--pulse-border); }
     }
 
     .ingest-progress-card.done {
@@ -546,6 +611,43 @@
       position: relative;
     }
 
+    .chat-topbar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      padding: 12px 64px 12px 20px;
+    }
+
+    .model-picker {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .model-picker-provider {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .model-select {
+      max-width: 240px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.8125rem;
+      cursor: pointer;
+    }
+
+    .model-select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .settings-btn {
       position: absolute;
       top: 16px;
@@ -627,7 +729,7 @@
     }
 
     .api-key-input:focus {
-      border-color: #4c3b8f;
+      border-color: var(--focus-border);
     }
 
     .api-key-actions {
@@ -656,6 +758,16 @@
 
     .api-key-cancel:hover {
       background: var(--border);
+    }
+
+    .llm-connect-btn.is-connected {
+      color: #22c55e;
+      border-color: #22c55e;
+    }
+
+    .llm-connect-btn.is-disconnected {
+      color: #f87171;
+      border-color: #f87171;
     }
 
     .api-key-submit {
@@ -1239,7 +1351,7 @@
     }
 
     .composer:focus-within {
-      border-color: #4c3b8f;
+      border-color: var(--focus-border);
     }
 
     .composer textarea {
@@ -1463,6 +1575,17 @@
       }
     }
   </style>
+  <script>
+    // Apply the saved theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      try {
+        var t = localStorage.getItem("rag_agent_theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
 </head>
 <body>
   <div id="imageLightbox" class="image-lightbox" aria-hidden="true">
@@ -1558,6 +1681,12 @@
           <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
         </svg>
       </button>
+      <div class="chat-topbar" id="chatTopbar" hidden>
+        <label class="model-picker" for="chatModelSelect">
+          <span class="model-picker-provider" id="chatModelProvider"></span>
+          <select id="chatModelSelect" class="model-select" aria-label="Answer model"></select>
+        </label>
+      </div>
       <div class="chat" id="chat">
         <div class="chat-inner" id="chatInner"></div>
       </div>
@@ -1665,6 +1794,52 @@
         placeholder="X-API-Key"
         autocomplete="off"
       />
+      <div class="settings-section-label" style="margin-top: 4px;">LLM Provider</div>
+      <select id="llmProviderSelect" class="api-key-input">
+        <optgroup label="Local">
+          <option value="ollama">Ollama</option>
+        </optgroup>
+        <optgroup label="Sign in">
+          <option value="claude_subscription">Claude (subscription)</option>
+        </optgroup>
+        <optgroup label="API key">
+          <option value="anthropic">Claude API</option>
+          <option value="openai">OpenAI API</option>
+          <option value="gemini">Gemini API</option>
+        </optgroup>
+      </select>
+      <input
+        class="api-key-input"
+        id="llmApiKeyInput"
+        type="password"
+        placeholder="API key"
+        autocomplete="off"
+        hidden
+      />
+      <p id="llmStatusLine" style="margin: 2px 0 4px; font-size: 12px; opacity: 0.75;"></p>
+      <div class="api-key-actions" style="justify-content: flex-start; margin-bottom: 4px;">
+        <button class="api-key-cancel llm-connect-btn" id="llmConnectBtn" type="button">Connect</button>
+      </div>
+      <div id="llmOauthRow" hidden>
+        <p style="margin: 2px 0 4px; font-size: 12px; opacity: 0.75;">
+          Approve in the tab that opened, then paste the code shown there:
+        </p>
+        <input
+          class="api-key-input"
+          id="llmOauthCodeInput"
+          type="text"
+          placeholder="Paste authorization code"
+          autocomplete="off"
+        />
+        <div class="api-key-actions" style="justify-content: flex-start; margin-bottom: 4px;">
+          <button class="api-key-submit" id="llmOauthFinishBtn" type="button">Complete sign-in</button>
+        </div>
+      </div>
+      <div class="settings-section-label" style="margin-top: 4px;">Appearance</div>
+      <select id="themeSelect" class="api-key-input">
+        <option value="dark">Dark</option>
+        <option value="light">Light</option>
+      </select>
       <div class="settings-section-label" style="margin-top: 4px;">Developer</div>
       <div class="settings-toggle-row">
         <label for="devModeToggle">Show query analytics</label>
@@ -1749,6 +1924,7 @@
     const TITLE_MAX = 40;
     const API_KEY_STORAGE = "rag_agent_api_key";
     const DEV_MODE_STORAGE = "rag_agent_dev_mode";
+    const THEME_STORAGE = "rag_agent_theme";
 
     const chat = document.getElementById("chat");
     const chatInner = document.getElementById("chatInner");
@@ -1797,6 +1973,17 @@
     const apiKeySubmit = document.getElementById("apiKeySubmit");
     const apiKeyCancel = document.getElementById("apiKeyCancel");
     const devModeToggle = document.getElementById("devModeToggle");
+    const themeSelect = document.getElementById("themeSelect");
+    const llmProviderSelect = document.getElementById("llmProviderSelect");
+    const llmApiKeyInput = document.getElementById("llmApiKeyInput");
+    const chatTopbar = document.getElementById("chatTopbar");
+    const chatModelSelect = document.getElementById("chatModelSelect");
+    const chatModelProvider = document.getElementById("chatModelProvider");
+    const llmStatusLine = document.getElementById("llmStatusLine");
+    const llmConnectBtn = document.getElementById("llmConnectBtn");
+    const llmOauthRow = document.getElementById("llmOauthRow");
+    const llmOauthCodeInput = document.getElementById("llmOauthCodeInput");
+    const llmOauthFinishBtn = document.getElementById("llmOauthFinishBtn");
     const documentsVendorFilter = document.getElementById("documentsVendorFilter");
     const chatToolbar = document.getElementById("chatToolbar");
     const chatVendorSelect = document.getElementById("chatVendorSelect");
@@ -1864,11 +2051,279 @@
       localStorage.setItem(DEV_MODE_STORAGE, enabled ? "true" : "false");
     }
 
+    function getTheme() {
+      return localStorage.getItem(THEME_STORAGE) === "dark" ? "dark" : "light";
+    }
+
+    function applyTheme(theme) {
+      const normalized = theme === "light" ? "light" : "dark";
+      localStorage.setItem(THEME_STORAGE, normalized);
+      document.documentElement.setAttribute("data-theme", normalized);
+    }
+
+    let llmStatus = null;
+
+    function renderLlmStatus() {
+      if (!llmStatusLine) return;
+      if (!llmStatus) {
+        llmStatusLine.textContent = "";
+        llmConnectBtn.textContent = "Connect";
+        llmConnectBtn.classList.remove("is-connected", "is-disconnected");
+        return;
+      }
+      const selected = llmProviderSelect.value;
+      const info = (llmStatus.providers || {})[selected] || {};
+
+      const isActive = llmStatus.provider === selected;
+      const connected = isActive && !!(llmStatus.connection || {}).connected;
+      llmConnectBtn.classList.toggle("is-connected", connected);
+      llmConnectBtn.classList.toggle("is-disconnected", isActive && !connected);
+      if (connected) {
+        llmConnectBtn.textContent = "● Connected";
+        llmConnectBtn.title = "Click to disconnect — forgets the stored credential";
+      } else {
+        llmConnectBtn.textContent = "Connect";
+        llmConnectBtn.title = "";
+      }
+      if (selected !== "claude_subscription" || info.signed_in) {
+        llmOauthRow.hidden = true;
+      }
+
+      // API-key providers get a key field; the saved key is never sent back to
+      // the browser, so an empty field means "keep the saved key".
+      if (llmApiKeyInput) {
+        const isApiKeyProvider = "api_key_set" in info;
+        llmApiKeyInput.hidden = !isApiKeyProvider;
+        if (isApiKeyProvider) {
+          llmApiKeyInput.placeholder = info.api_key_set
+            ? "API key saved — leave blank to keep"
+            : "API key";
+        } else {
+          llmApiKeyInput.value = "";
+        }
+      }
+
+      let text = info.detail || "";
+      if (isActive) text = (connected ? "Active · " : "Active · disconnected · ") + text;
+      llmStatusLine.textContent = text;
+    }
+
+    async function loadLlmStatus() {
+      try {
+        const res = await fetch("/llm/status", { headers: buildApiHeaders() });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        llmStatus = await res.json();
+        if (llmProviderSelect) llmProviderSelect.value = llmStatus.provider;
+        renderLlmStatus();
+        renderChatModelPicker();
+      } catch (_err) {
+        llmStatus = null;
+        if (llmStatusLine) {
+          llmStatusLine.textContent =
+            "Could not load LLM status (is the server up to date? restart it).";
+        }
+        renderChatModelPicker();
+      }
+    }
+
+    // Friendly labels: Claude ids collapse to Opus / Sonnet / Haiku; everything
+    // else (Ollama tags, OpenAI, Gemini) shows the raw model id.
+    function modelOptionLabel(id) {
+      const lower = (id || "").toLowerCase();
+      if (lower.includes("opus")) return "Opus";
+      if (lower.includes("sonnet")) return "Sonnet";
+      if (lower.includes("haiku")) return "Haiku";
+      return id;
+    }
+
+    const PROVIDER_LABEL = {
+      ollama: "Ollama",
+      claude_subscription: "Claude",
+      anthropic: "Claude",
+      openai: "OpenAI",
+      gemini: "Gemini",
+      claude_cli: "Claude",
+    };
+
+    // Model picker lives in the chat window and always targets the active
+    // provider (Settings only handles connecting/disconnecting a provider).
+    function renderChatModelPicker() {
+      if (!chatModelSelect || !chatTopbar) return;
+      const provider = llmStatus && llmStatus.provider;
+      const info = (llmStatus && (llmStatus.providers || {})[provider]) || {};
+      const models = info.models || [];
+      const current = (llmStatus && llmStatus.model) || "";
+      if (!provider || models.length === 0) {
+        chatTopbar.hidden = true;
+        return;
+      }
+      const values = models.slice();
+      if (current && !values.includes(current)) values.unshift(current);
+      chatModelSelect.textContent = "";
+      values.forEach((id) => {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = modelOptionLabel(id);
+        chatModelSelect.appendChild(option);
+      });
+      chatModelSelect.value = current || values[0];
+      if (chatModelProvider) {
+        chatModelProvider.textContent = PROVIDER_LABEL[provider] || provider;
+      }
+      chatTopbar.hidden = false;
+    }
+
+    async function switchChatModel(model) {
+      if (!llmStatus || !model) return;
+      chatModelSelect.disabled = true;
+      try {
+        const res = await fetch("/llm/provider", {
+          method: "POST",
+          headers: buildApiHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ provider: llmStatus.provider, model }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "could not switch model");
+        llmStatus = data;
+        renderLlmStatus();
+        renderChatModelPicker();
+      } catch (_err) {
+        // Revert the picker to the model the server still reports.
+        renderChatModelPicker();
+      } finally {
+        chatModelSelect.disabled = false;
+      }
+    }
+
+    async function connectLlmProvider() {
+      if (!llmProviderSelect) return;
+      llmConnectBtn.disabled = true;
+      try {
+        const res = await fetch("/llm/provider", {
+          method: "POST",
+          headers: buildApiHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            provider: llmProviderSelect.value,
+            // Model is chosen in the chat window, not here; keep the provider's
+            // existing/default model on connect.
+            model: null,
+            api_key:
+              (llmApiKeyInput && llmApiKeyInput.value.trim()) || null,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "connect failed");
+        if (llmApiKeyInput) llmApiKeyInput.value = "";
+        llmStatus = data;
+        renderLlmStatus();
+        renderChatModelPicker();
+      } catch (err) {
+        llmStatusLine.textContent = "Connect failed: " + err.message;
+      } finally {
+        llmConnectBtn.disabled = false;
+      }
+    }
+
+    async function disconnectLlmProvider() {
+      llmConnectBtn.disabled = true;
+      try {
+        const res = await fetch("/llm/disconnect", {
+          method: "POST",
+          headers: buildApiHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ provider: llmProviderSelect.value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "disconnect failed");
+        llmStatus = data;
+        renderLlmStatus();
+        renderChatModelPicker();
+        if (data.disconnect_detail) {
+          llmStatusLine.textContent = data.disconnect_detail;
+        }
+      } catch (err) {
+        llmStatusLine.textContent = "Disconnect failed: " + err.message;
+      } finally {
+        llmConnectBtn.disabled = false;
+      }
+    }
+
+    async function onLlmConnectClick() {
+      if (!llmStatus) {
+        await loadLlmStatus();
+        if (!llmStatus) return;
+      }
+      const selected = llmProviderSelect.value;
+      const isActive = llmStatus.provider === selected;
+      const connected = isActive && !!(llmStatus.connection || {}).connected;
+      if (connected) {
+        await disconnectLlmProvider();
+        return;
+      }
+      const info = (llmStatus.providers || {})[selected] || {};
+      if (selected === "claude_subscription" && !info.signed_in) {
+        await startClaudeSignin();
+        return;
+      }
+      await connectLlmProvider();
+    }
+
+    async function startClaudeSignin() {
+      try {
+        const res = await fetch("/llm/claude/oauth/start", {
+          method: "POST",
+          headers: buildApiHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "could not start sign-in");
+        if (data.signed_in) {
+          llmStatusLine.textContent = "Already signed in ✓";
+          void loadLlmStatus();
+          return;
+        }
+        window.open(data.url, "_blank", "noopener");
+        llmOauthRow.hidden = false;
+        llmOauthCodeInput.value = "";
+        llmOauthCodeInput.focus();
+        llmStatusLine.textContent =
+          "Sign in on the claude.ai tab, approve, then paste the code below.";
+      } catch (err) {
+        llmStatusLine.textContent = "Sign-in failed: " + err.message;
+      }
+    }
+
+    async function finishClaudeSignin() {
+      const code = llmOauthCodeInput.value.trim();
+      if (!code) {
+        llmStatusLine.textContent = "Paste the authorization code first.";
+        return;
+      }
+      llmOauthFinishBtn.disabled = true;
+      try {
+        const res = await fetch("/llm/claude/oauth/finish", {
+          method: "POST",
+          headers: buildApiHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "sign-in failed");
+        llmOauthRow.hidden = true;
+        // Signed in — connect the provider right away (Forgestation-style:
+        // one button drives the whole login → connected transition).
+        await connectLlmProvider();
+      } catch (err) {
+        llmStatusLine.textContent = "Sign-in failed: " + err.message;
+      } finally {
+        llmOauthFinishBtn.disabled = false;
+      }
+    }
+
     function showApiKeyModal() {
       apiKeyInput.value = getApiKey();
       devModeToggle.checked = isDevMode();
+      if (themeSelect) themeSelect.value = getTheme();
       if (sttAutoSendToggle) sttAutoSendToggle.checked = sttAutoSend;
       apiKeyModal.classList.add("is-open");
+      void loadLlmStatus();
       apiKeyInput.focus();
     }
 
@@ -3173,8 +3628,12 @@
     function appendCitationMedia(content, citations) {
       if (!content) return;
 
+      const seenSrcs = new Set();
       const imageCites = (citations || []).filter(function (c) {
-        return citationImageSrc(c);
+        const src = citationImageSrc(c);
+        if (!src || seenSrcs.has(src)) return false;
+        seenSrcs.add(src);
+        return true;
       });
       if (!imageCites.length) return;
 
@@ -3191,23 +3650,27 @@
         wrap.className = "citation-thumb-wrap";
         const img = document.createElement("img");
         img.className = "citation-thumb";
-        img.alt = formatCitationLabel(citation);
+        const labelText = formatCitationLabel(citation);
+        const hasVisibleLabel = citation.content_type === "image_caption";
+        // When a visible label is rendered below, alt text repeating it would
+        // read twice to screen readers and duplicate the line in copied text.
+        img.alt = hasVisibleLabel ? "" : labelText;
         img.loading = "lazy";
         img.decoding = "async";
         const src = citationImageSrc(citation);
         img.addEventListener("click", function (event) {
           event.stopPropagation();
-          openImageLightbox(src, img.alt);
+          openImageLightbox(src, labelText);
         });
         img.addEventListener("error", function () {
           wrap.remove();
           if (!row.childElementCount) row.remove();
         });
         wrap.appendChild(img);
-        if (citation.content_type === "image_caption") {
+        if (hasVisibleLabel) {
           const label = document.createElement("div");
           label.className = "citation-thumb-label";
-          label.textContent = formatCitationLabel(citation);
+          label.textContent = labelText;
           wrap.appendChild(label);
         }
         img.src = src;
@@ -4409,9 +4872,26 @@
 
     settingsBtn.addEventListener("click", showApiKeyModal);
 
+    if (themeSelect) {
+      // Apply the theme live so the switch is visible immediately in settings.
+      themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
+    }
+
     apiKeyCancel.addEventListener("click", hideApiKeyModal);
 
     apiKeySubmit.addEventListener("click", saveApiKeyFromModal);
+
+    if (llmProviderSelect) {
+      llmProviderSelect.addEventListener("change", renderLlmStatus);
+      llmConnectBtn.addEventListener("click", onLlmConnectClick);
+      llmOauthFinishBtn.addEventListener("click", finishClaudeSignin);
+      llmOauthCodeInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          finishClaudeSignin();
+        }
+      });
+    }
 
     apiKeyInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -4419,6 +4899,12 @@
         saveApiKeyFromModal();
       }
     });
+
+    if (chatModelSelect) {
+      chatModelSelect.addEventListener("change", () => {
+        switchChatModel(chatModelSelect.value);
+      });
+    }
 
     if (chatVendorSelect) {
       chatVendorSelect.addEventListener("change", () => {
@@ -4442,6 +4928,7 @@
     initTtsControls();
     initSttControls();
     loadVendorsCatalog();
+    void loadLlmStatus();
   </script>
 </body>
 </html>

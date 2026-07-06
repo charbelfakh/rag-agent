@@ -1,8 +1,6 @@
 """Sprint A unit tests: reranker input truncation."""
-import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from providers.reranker import CrossEncoderReranker, truncate_for_rerank
 

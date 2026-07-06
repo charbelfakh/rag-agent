@@ -71,7 +71,9 @@ def retrieve_for_item(
         filter_payload = {"content_type": content_type_filter}
 
     t_search = time.perf_counter()
-    chunks = store.search(vector, top_k=fetch_k, filter_payload=filter_payload)
+    chunks = store.search(
+        vector, top_k=fetch_k, filter_payload=filter_payload, query_text=question
+    )
     search_ms = int((time.perf_counter() - t_search) * 1000)
 
     top_vector_score, _ = score_stats(chunks)
@@ -214,14 +216,29 @@ def main() -> int:
 
     if args.write_baseline:
         baseline_payload = {
-            "dataset": str(args.dataset),
+            "dataset": args.dataset.as_posix(),
             **summary,
         }
-        args.baseline.write_text(json.dumps(baseline_payload, indent=2), encoding="utf-8")
+        args.baseline.write_text(
+            json.dumps(baseline_payload, indent=2) + "\n", encoding="utf-8"
+        )
         print(f"Wrote baseline to {args.baseline}")
 
-    if args.check_baseline and args.baseline.exists():
+    if args.check_baseline:
+        if not args.baseline.exists():
+            print(
+                f"ERROR: baseline file not found: {args.baseline} — "
+                "run --write-baseline against live services first",
+                file=sys.stderr,
+            )
+            return 1
         baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+        if baseline.get("count", 0) == 0:
+            print(
+                "ERROR: baseline count is 0 — run --write-baseline against live services first",
+                file=sys.stderr,
+            )
+            return 1
         regressions = compare_to_baseline(summary, baseline)
         if regressions:
             for message in regressions:

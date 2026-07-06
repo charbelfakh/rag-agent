@@ -27,16 +27,31 @@ if "qdrant_client" not in sys.modules:
         "MatchValue",
         "PointStruct",
         "PayloadSchemaType",
+        "QueryRequest",
         "ScalarQuantization",
         "ScalarQuantizationConfig",
         "ScalarType",
         "VectorParams",
+        "SparseVector",
+        "SparseVectorParams",
+        "Modifier",
     ):
         setattr(_fake_models, _name, MagicMock())
     _fake_qdrant.QdrantClient = MagicMock
     _fake_qdrant.models = _fake_models
     sys.modules["qdrant_client"] = _fake_qdrant
     sys.modules["qdrant_client.models"] = _fake_models
+
+
+@pytest.fixture(autouse=True)
+def _isolated_app_data_dir(tmp_path, monkeypatch):
+    """Keep tests away from the real per-user secret store.
+
+    App startup loads persisted API keys / provider state, and the default
+    paths resolve to %APPDATA%\\rag-agent (with one-time migration from
+    data/) — a test run must never read or move real credentials.
+    """
+    monkeypatch.setenv("RAG_AGENT_APP_DIR", str(tmp_path / "app-data"))
 
 
 @pytest.fixture
@@ -64,12 +79,16 @@ def patch_retrieval_pipeline(
         ("get_embedder", embedder),
         ("get_vector_store", store),
         ("get_llm", llm),
+        # HyDE + sufficiency use the fast tier; in tests it is the same fake as
+        # the main llm (matches the Ollama path where get_fast_llm is get_llm).
+        ("get_fast_llm", llm),
         ("get_semantic_cache", cache),
         ("get_reranker", reranker),
     )
     for attr, value in pairs:
         if value is None:
             continue
-        monkeypatch.setattr(orchestrator, attr, lambda v=value: v)
+        if hasattr(orchestrator, attr):
+            monkeypatch.setattr(orchestrator, attr, lambda v=value: v)
         if hasattr(rag_pipeline, attr):
             monkeypatch.setattr(rag_pipeline, attr, lambda v=value: v)

@@ -1,8 +1,6 @@
 """Sprint J tests: feedback, orchestrator, two-stage, slim payload, judge, OTel."""
-import types
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from eval.llm_judge import grade_answer, parse_judge_response
 from providers.metadata import slim_payload_text

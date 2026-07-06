@@ -107,7 +107,14 @@ def compare_to_baseline(
 ) -> list[str]:
     """Return regression messages; empty list means within tolerance."""
     regressions: list[str] = []
-    for key in ("recall_at_5", "recall_at_10", "mrr"):
+    gated_keys = (
+        "recall_at_5",
+        "recall_at_10",
+        "mrr",
+        "caption_recall_at_5",
+        "strict_caption_recall_at_5",
+    )
+    for key in gated_keys:
         base = baseline.get(key)
         cur = current.get(key)
         if base is None or cur is None:
